@@ -9,7 +9,7 @@ import {
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bell, BellOff, Sparkles, Bot, Bug, Reply,
-  ChevronDown, Copy, MoreVertical, ArrowDown
+  ChevronDown, Copy, MoreVertical, ArrowDown, Eraser
 } from 'lucide-react';
 
 const EMOJIS = [
@@ -23,7 +23,7 @@ const EMOJIS = [
 const ZAY_ID = 'zay-assistant';
 
 const ChatRoom: React.FC = () => {
-  const { user, t, onlineUserIds, lang, isDev } = useAuth();
+  const { user, t, onlineUserIds, lang, isDev, isAdmin } = useAuth();
   
   // Data State
   const [userCache, setUserCache] = useState<any[]>([]);
@@ -217,7 +217,8 @@ const ChatRoom: React.FC = () => {
             mediaUrl: newMsg.media_url,
             fileName: newMsg.file_name,
             createdAt: newMsg.created_at,
-            reactions: newMsg.reactions || []
+            reactions: newMsg.reactions || [],
+            readBy: newMsg.read_by || []
           };
           return [...prev, formatted];
         });
@@ -285,7 +286,8 @@ const ChatRoom: React.FC = () => {
           content: responseText,
           type: 'text',
           createdAt: new Date().toISOString(),
-          reactions: []
+          reactions: [],
+          readBy: []
       };
       setMessages(prev => [...prev, aiMsg]);
       scrollToBottom();
@@ -429,6 +431,17 @@ const ChatRoom: React.FC = () => {
     }
   };
 
+  const handleClearChat = async () => {
+    if (confirm("WARNING: This will delete ALL messages for EVERYONE. Are you sure?")) {
+        try {
+            await supabaseService.clearChat();
+            setMessages([]);
+        } catch(e) {
+            alert("Failed to clear chat.");
+        }
+    }
+  }
+
   // --- FORMATTING HELPERS ---
   const formatDateLabel = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -484,6 +497,11 @@ const ChatRoom: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+              <button onClick={handleClearChat} className="p-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all" title="Clear Chat">
+                  <Trash2 size={18} />
+              </button>
+          )}
           <button onClick={toggleNotifications} className={`p-2 rounded-xl transition-all ${notificationsEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
             {notificationsEnabled ? <Bell size={18} className="fill-current" /> : <BellOff size={18} />}
           </button>
@@ -601,7 +619,7 @@ const ChatRoom: React.FC = () => {
                   <div className={`absolute -top-8 ${isMe ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-all z-10 pointer-events-none group-hover:pointer-events-auto`}>
                        <div className="bg-white border shadow-lg rounded-full p-1 flex items-center gap-0.5 scale-90">
                           {['👍', '❤️', '😂', '😮'].map(e => <button key={e} onClick={() => toggleReaction(msg, e)} className="p-1.5 hover:scale-125 transition-transform">{e}</button>)}
-                          {(isMe || isDev) && <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 text-slate-400 hover:text-rose-500"><Trash2 size={14} /></button>}
+                          {(isMe || isAdmin) && <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 text-slate-400 hover:text-rose-500"><Trash2 size={14} /></button>}
                        </div>
                   </div>
                 </div>
