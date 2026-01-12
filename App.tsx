@@ -75,7 +75,7 @@ const App: React.FC = () => {
     }
 
     if (!supabaseService.isConfigured()) {
-      setConfigError("The API_KEY environment variable is not set.");
+      setConfigError("Missing Supabase Configuration. Please set VITE_SUPABASE_URL and VITE_SUPABASE_KEY in your Vercel Environment Variables.");
       return;
     }
 
@@ -86,6 +86,7 @@ const App: React.FC = () => {
         users: cloudData.users,
         items: cloudData.items,
         timetable: cloudData.timetable,
+        lessons: cloudData.lessons,
         subjects: INITIAL_SUBJECTS,
         language: appState.language
       };
@@ -113,7 +114,7 @@ const App: React.FC = () => {
       setSyncWarning(false);
     } catch (e: any) {
       console.error("Cloud sync failure:", e);
-      if (e.message?.includes("key") || e.message?.includes("URL")) {
+      if (e.message?.includes("key") || e.message?.includes("URL") || e.message?.includes("Configuration")) {
         setConfigError(e.message || "Failed to connect to cloud database.");
       } else {
         setSyncWarning(true);
