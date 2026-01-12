@@ -3,6 +3,12 @@ import { GoogleGenAI } from "@google/genai";
 import { AppState, User, Lesson, Subject } from '../types';
 import { storageService } from './storageService';
 
+interface AiResponse {
+  text: string;
+  mediaUrl?: string;
+  type: 'text' | 'image' | 'file';
+}
+
 /**
  * AI Service for @Zay Classroom Assistant.
  * Implements Google Gemini 3 Flash Preview for intelligent classroom support.
@@ -13,12 +19,12 @@ export const aiService = {
    * @param userQuery The student's question or command.
    * @param requestingUser The user profile making the request.
    */
-  askZay: async (userQuery: string, requestingUser: User | null): Promise<string> => {
+  askZay: async (userQuery: string, requestingUser: User | null): Promise<AiResponse> => {
     // 1. Strict Environment Variable Check
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
       console.error("AI Service Error: process.env.API_KEY is missing.");
-      return "⚠️ Connectivity Error: My brain is disconnected (Missing API Key). Please tell the developer.";
+      return { text: "⚠️ Connectivity Error: My brain is disconnected (Missing API Key). Please tell the developer.", type: 'text' };
     }
 
     try {
@@ -45,7 +51,6 @@ export const aiService = {
       const subjectsList = appState.subjects.map(s => s.name.en).join(', ');
 
       // 5.1 LESSON RETRIEVAL (Basic RAG)
-      // Filter published lessons relevant to the query based on basic keyword matching
       const queryLower = userQuery.toLowerCase();
       const relevantLessons = appState.lessons
         .filter(l => l.isPublished)
@@ -53,19 +58,18 @@ export const aiService = {
           const contentMatch = l.title.toLowerCase().includes(queryLower) || 
                                l.description.toLowerCase().includes(queryLower) ||
                                l.keywords.some(k => queryLower.includes(k.toLowerCase()));
-          // Also match subject name if explicitly mentioned
           const subject = appState.subjects.find(s => s.id === l.subjectId);
           const subjectMatch = subject ? queryLower.includes(subject.name.en.toLowerCase()) || 
                                          queryLower.includes(subject.name.fr.toLowerCase()) : false;
-          
           return contentMatch || subjectMatch;
         })
-        .slice(0, 5); // Limit to top 5 matches to save context
+        .slice(0, 5);
 
       const lessonContext = relevantLessons.map(l => {
           const subject = appState.subjects.find(s => s.id === l.subjectId)?.name.en || 'General';
           return `
             [LESSON MATCH]
+            ID: ${l.id}
             Title: ${l.title}
             Subject: ${subject}
             Type: ${l.type}
@@ -86,20 +90,16 @@ export const aiService = {
         - Upcoming Tasks: ${upcomingItems.length ? upcomingItems.join('; ') : 'Nothing scheduled soon.'}
         - Subjects: ${subjectsList}
         
-        **LESSON DATABASE (Use this if the user asks for a lesson/document):**
+        **LESSON DATABASE:**
         ${lessonContext || "No specific lessons found for this query."}
 
         **STRICT RULES:**
-        1. Keep responses EXTREMELY SHORT and direct. Maximum 1-2 sentences.
-        2. Do NOT ask follow-up questions.
-        3. Do NOT use Markdown formatting (No bold, no italics) unless providing a link.
-        4. IF YOU FIND A MATCHING LESSON in the database above, you MUST respond using this EXACT format:
-           "📘 [Title]
-            [Short Description]
-            ⏱️ [Time]
-            📄 [URL]"
-        5. If multiple lessons match, list the top 2.
-        6. If no lesson matches but the user asked for one, say: "I don't have that lesson yet. Check with your teacher."
+        1. Keep responses EXTREMELY SHORT (1-2 sentences).
+        2. If you find a matching lesson in the context:
+           - Provide a short summary.
+           - IMPORTANT: You MUST output the file URL as the LAST line of your response in this exact format: "MEDIA_URL::[URL]"
+        3. Do not invent lessons.
+        4. If the user explicitly asks for a file/image and you found one, use the MEDIA_URL format.
       `;
 
       // 6. Generate Content
@@ -109,29 +109,35 @@ export const aiService = {
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.7,
-          topP: 0.95,
-          topK: 40,
         },
       });
 
-      // 7. Return Result
-      const text = response.text;
-      if (!text) throw new Error("Received empty response from AI.");
+      // 7. Parse Result
+      const text = response.text || "";
+      const mediaSplit = text.split("MEDIA_URL::");
       
-      // Safety: Strip markdown symbols just in case (except links)
-      return text.trim();
+      let finalText = mediaSplit[0].trim();
+      let mediaUrl = mediaSplit[1]?.trim();
+      let type: 'text' | 'image' | 'file' = 'text';
+
+      if (mediaUrl) {
+        const ext = mediaUrl.split('.').pop()?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext || '')) {
+          type = 'image';
+        } else {
+          type = 'file';
+        }
+      }
+
+      return {
+        text: finalText,
+        mediaUrl: mediaUrl,
+        type: type
+      };
 
     } catch (error: any) {
       console.error("AI Generation Failed:", error);
-      
-      if (error.message?.includes('401') || error.message?.includes('API key')) {
-        return "⚠️ Authentication Failed: My API Key is invalid or expired.";
-      }
-      if (error.message?.includes('429')) {
-        return "🔥 I'm thinking too hard (Rate Limit Reached). Please wait a moment.";
-      }
-      
-      return "😵 I got confused. Please ask again.";
+      return { text: "😵 I got confused. Please ask again.", type: 'text' };
     }
   }
 };
