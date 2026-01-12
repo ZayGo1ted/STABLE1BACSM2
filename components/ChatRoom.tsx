@@ -11,6 +11,7 @@ import {
   Bell, BellOff, Sparkles, Bot, Bug, Reply,
   ChevronDown, Copy, MoreVertical, ArrowDown, Eraser
 } from 'lucide-react';
+import { ZAY_USER_ID } from '../constants';
 
 const EMOJIS = [
   '👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉',
@@ -19,8 +20,6 @@ const EMOJIS = [
   '🥳', '🥺', '😤', '😱', '🤫', '🤥', '👻', '👽',
   '🤖', '👾', '🎃', '😺', '🤲', '💪', '👑', '💎'
 ];
-
-const ZAY_ID = 'zay-assistant';
 
 const ChatRoom: React.FC = () => {
   const { user, t, onlineUserIds, lang, isDev, isAdmin } = useAuth();
@@ -261,7 +260,7 @@ const ChatRoom: React.FC = () => {
   }, [user, notificationsEnabled, userCache]);
 
   const getUserInfo = (id: string) => {
-    if (id === ZAY_ID) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
+    if (id === ZAY_USER_ID) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
     const u = userCache.find((u: any) => u.id === id);
     return u || { name: 'Student', role: 'STUDENT' };
   };
@@ -273,26 +272,18 @@ const ChatRoom: React.FC = () => {
     lastBotTriggerRef.current = now;
 
     setIsBotTyping(true);
-    const safetyTimeout = setTimeout(() => setIsBotTyping(false), 15000);
+    const safetyTimeout = setTimeout(() => setIsBotTyping(false), 20000);
 
     try {
       const responseText = await aiService.askZay(userQuery, user);
-      clearTimeout(safetyTimeout);
-      setIsBotTyping(false);
-
-      const aiMsg: ChatMessage = {
-          id: `ai-${Date.now()}`,
-          userId: ZAY_ID,
-          content: responseText,
-          type: 'text',
-          createdAt: new Date().toISOString(),
-          reactions: [],
-          readBy: []
-      };
-      setMessages(prev => [...prev, aiMsg]);
-      scrollToBottom();
-
-      await supabaseService.sendMessage({ userId: ZAY_ID, content: responseText, type: 'text' });
+      
+      // CRITICAL: Send to server only. Rely on subscription for display.
+      // This ensures AI messages are "server-side" and shared with everyone.
+      await supabaseService.sendMessage({ 
+        userId: ZAY_USER_ID, 
+        content: responseText, 
+        type: 'text' 
+      });
     } catch (error) {
       console.error("Bot Trigger Error:", error);
     } finally {
@@ -337,6 +328,7 @@ const ChatRoom: React.FC = () => {
       setAttachment(null);
       setReplyingTo(null);
 
+      // Trigger bot if @zay mentioned
       if (type === 'text' && content.toLowerCase().includes('@zay')) {
         handleBotTrigger(content);
       }
@@ -425,9 +417,17 @@ const ChatRoom: React.FC = () => {
   };
 
   const handleDeleteMessage = async (msgId: string) => {
-    if (confirm("Delete this message?")) {
+    if (confirm("Permanently delete this message?")) {
+      // Optimistic
       setMessages(prev => prev.filter(m => m.id !== msgId));
-      await supabaseService.deleteMessage(msgId);
+      try {
+        await supabaseService.deleteMessage(msgId);
+      } catch (err) {
+        alert("Failed to delete from server.");
+        // Reload messages if failed
+        const msgs = await supabaseService.fetchMessages(100);
+        setMessages(msgs);
+      }
     }
   };
 
@@ -516,9 +516,10 @@ const ChatRoom: React.FC = () => {
         onClick={() => { setEmojiPickerOpen(false); setShowMentionPopup(false); }}
       >
         {messages.map((msg, idx) => {
-          const isMe = msg.userId === user?.id;
+          // Robust isMe check to ensure users can delete their own messages
+          const isMe = user && msg.userId.toString() === user.id.toString();
           const userInfo = getUserInfo(msg.userId);
-          const isBot = msg.userId === ZAY_ID;
+          const isBot = msg.userId === ZAY_USER_ID;
           const prevMsg = messages[idx - 1];
           
           // Date Grouping
@@ -542,7 +543,7 @@ const ChatRoom: React.FC = () => {
                   {!isSequence && (isBot ? <Bot size={16} /> : userInfo.name.charAt(0))}
                 </div>
                 
-                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%]`}>
+                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] relative`}>
                   {!isSequence && !isMe && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
                       <span className={`text-[11px] font-black ${isBot ? 'text-violet-600' : 'text-slate-600'}`}>{userInfo.name}</span>
@@ -595,16 +596,28 @@ const ChatRoom: React.FC = () => {
                        </span>
                     </div>
 
-                    {/* Quick Actions Hover */}
-                    <button 
-                        onClick={() => setReplyingTo(msg)}
-                        className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-8' : '-right-8'} p-1.5 text-slate-400 hover:text-indigo-600 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all`}
-                        title="Reply"
-                    >
-                        <Reply size={14} />
-                    </button>
+                    {/* Desktop Hover Actions (Visible on PC) */}
+                    <div className={`absolute top-0 ${isMe ? '-left-12' : '-right-12'} hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                        <button 
+                            onClick={() => setReplyingTo(msg)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 bg-white rounded-full shadow-sm"
+                            title="Reply"
+                        >
+                            <Reply size={14} />
+                        </button>
+                        {(isMe || isAdmin) && (
+                           <button 
+                             onClick={() => handleDeleteMessage(msg.id)}
+                             className="p-1.5 text-slate-400 hover:text-rose-500 bg-white rounded-full shadow-sm"
+                             title="Delete"
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                        )}
+                    </div>
                   </div>
 
+                  {/* Reaction Pill */}
                   {msg.reactions.length > 0 && (
                       <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                           {Array.from(new Set(msg.reactions.map(r => r.emoji))).map((emoji: any) => (
@@ -615,11 +628,18 @@ const ChatRoom: React.FC = () => {
                       </div>
                   )}
 
-                  {/* Reaction Picker on Hover */}
+                  {/* Reaction Bar & Mobile Delete (Visible on Tap/Hover) */}
                   <div className={`absolute -top-8 ${isMe ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-all z-10 pointer-events-none group-hover:pointer-events-auto`}>
                        <div className="bg-white border shadow-lg rounded-full p-1 flex items-center gap-0.5 scale-90">
                           {['👍', '❤️', '😂', '😮'].map(e => <button key={e} onClick={() => toggleReaction(msg, e)} className="p-1.5 hover:scale-125 transition-transform">{e}</button>)}
-                          {(isMe || isAdmin) && <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 text-slate-400 hover:text-rose-500"><Trash2 size={14} /></button>}
+                          {(isMe || isAdmin) && (
+                            <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 text-slate-400 hover:text-rose-500 md:hidden">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                          <button onClick={() => setReplyingTo(msg)} className="p-1.5 text-slate-400 hover:text-indigo-600 md:hidden">
+                            <Reply size={14} />
+                          </button>
                        </div>
                   </div>
                 </div>
@@ -651,7 +671,7 @@ const ChatRoom: React.FC = () => {
                     <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                     <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce"></div>
                  </div>
-                 <span className="text-[10px] font-black text-violet-600 uppercase tracking-widest">Thinking...</span>
+                 <span className="text-[10px] font-black text-violet-600 uppercase tracking-widest">Zay is thinking...</span>
               </div>
            </div>
         )}
