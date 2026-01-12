@@ -1,22 +1,9 @@
 
 import React, { useState } from 'react';
-import { useAuth } from '../App';
+import { useAuth } from '../AuthContext';
 import { 
-  LayoutDashboard, 
-  Calendar, 
-  BookOpen, 
-  Users, 
-  LogOut, 
-  Menu, 
-  X,
-  Code,
-  ShieldAlert,
-  GraduationCap,
-  Clock,
-  Activity,
-  Heart,
-  MessageCircle,
-  Library
+  LayoutDashboard, Calendar, BookOpen, Users, LogOut, Menu, X, Code,
+  ShieldAlert, GraduationCap, Clock, Activity, Heart, MessageCircle, Library
 } from 'lucide-react';
 import { APP_NAME } from '../constants';
 
