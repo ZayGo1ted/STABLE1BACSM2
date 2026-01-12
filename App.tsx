@@ -9,6 +9,7 @@ import DashboardLayout from './components/DashboardLayout';
 import Overview from './components/Overview';
 import CalendarView from './components/CalendarView';
 import SubjectsView from './components/SubjectsView';
+import LessonsView from './components/LessonsView';
 import ClassList from './components/ClassList';
 import AdminPanel from './components/AdminPanel';
 import DevTools from './components/DevTools';
@@ -346,6 +347,7 @@ const App: React.FC = () => {
                 case 'calendar': return <CalendarView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} onEditRequest={handleCalendarEditRequest} />;
                 case 'timetable': return <Timetable entries={appState.timetable} subjects={appState.subjects} onUpdate={updateAppState} />;
                 case 'subjects': return <SubjectsView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialSubjectId={selectedSubjectId} clearInitialSubject={() => setSelectedSubjectId(null)} />;
+                case 'lessons': return <LessonsView state={appState} />;
                 case 'classlist': return <ClassList users={appState.users} onUpdate={updateAppState} />;
                 case 'credits': return <Credits />;
                 case 'admin': return isAdmin ? <AdminPanel items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialEditItem={pendingEditItem} onEditHandled={() => setPendingEditItem(null)} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={handleSubjectSelectFromOverview} />;
