@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
 import { User, AppState, UserRole } from '../types';
-import { useAuth } from '../App';
+import { useAuth } from '../AuthContext';
 import { supabaseService } from '../services/supabaseService';
-import { Search, Mail, Trash2, ShieldCheck, ShieldAlert, Activity } from 'lucide-react';
+import { Search, Mail, Trash2, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 interface Props {
   users: User[];
@@ -23,9 +23,7 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
     if (!isDev) return;
     try {
       const updatedUser = { ...targetUser, role: newRole };
-      // Database Update
       await supabaseService.updateUser(updatedUser);
-      // Local state update triggers the App.tsx logic
       onUpdate({ users: users.map(u => u.id === targetUser.id ? updatedUser : u) });
     } catch (err) {
       alert("Role update failed. Please check your connection.");
@@ -73,40 +71,24 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
         />
       </div>
 
-      {/* Grid: High density layout (2 mobile, 3 tablet, 5 desktop) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         {filtered.map(member => {
           const isOnline = onlineUserIds.has(member.id);
-          
-          // DEVs can delete anyone but themselves. 
-          // ADMINs can delete anyone who isn't a DEV and isn't themselves.
-          const canDelete = (isDev || isAdmin) && 
-                            member.id !== currentUser?.id && 
-                            (isDev || member.role !== UserRole.DEV);
+          const canDelete = (isDev || isAdmin) && member.id !== currentUser?.id && (isDev || member.role !== UserRole.DEV);
           
           return (
             <div key={member.id} className="bg-white p-4 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center group hover:shadow-xl hover:border-indigo-100 transition-all relative overflow-hidden">
-              {/* Action Buttons - More Visible Now */}
               <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
                 {canDelete && (
-                  <button 
-                    onClick={() => handleDelete(member.id)} 
-                    className="p-2 text-rose-500 hover:text-white bg-rose-50 hover:bg-rose-600 rounded-xl transition-all shadow-sm"
-                    title="Delete User"
-                  >
+                  <button onClick={() => handleDelete(member.id)} className="p-2 text-rose-500 hover:text-white bg-rose-50 hover:bg-rose-600 rounded-xl transition-all shadow-sm">
                     <Trash2 size={16} />
                   </button>
                 )}
-                <a 
-                  href={`mailto:${member.email}`} 
-                  className="p-2 text-slate-400 hover:text-white bg-slate-50 hover:bg-indigo-600 rounded-xl transition-all shadow-sm"
-                  title="Contact User"
-                >
+                <a href={`mailto:${member.email}`} className="p-2 text-slate-400 hover:text-white bg-slate-50 hover:bg-indigo-600 rounded-xl transition-all shadow-sm">
                   <Mail size={16} />
                 </a>
               </div>
 
-              {/* Avatar Section */}
               <div className="relative mb-2 mt-2">
                 <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center font-black text-xl border-2 border-white shadow-inner group-hover:scale-105 transition-transform duration-500 ${
                   member.role === UserRole.DEV ? 'bg-slate-900 text-white' : 'bg-indigo-50 text-indigo-600'
@@ -120,7 +102,6 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
                 )}
               </div>
 
-              {/* User Info Section */}
               <div className="w-full space-y-1">
                 <div className="flex items-center justify-center gap-1 min-w-0">
                   <h3 className="font-black text-slate-900 text-[11px] md:text-xs truncate">{member.name}</h3>
@@ -132,7 +113,6 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
                   {member.studentNumber || 'STU-000'}
                 </p>
 
-                {/* Dev Only Role Modifier */}
                 {isDev && (
                   <div className="mt-2 pt-2 border-t border-slate-50 w-full">
                     <select 
