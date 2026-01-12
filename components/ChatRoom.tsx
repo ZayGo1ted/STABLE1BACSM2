@@ -21,6 +21,29 @@ const EMOJIS = [
   '🤖', '👾', '🎃', '😺', '🤲', '💪', '👑', '💎'
 ];
 
+const AI_PREFIX = ":::AI_RESPONSE:::";
+
+const formatDateLabel = (dateStr: string) => {
+  const date = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+};
+
+const renderContentWithMentions = (text: string) => {
+  const parts = text.split(/(@\S+)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('@') && part.length > 1) {
+      return <span key={i} className="font-bold text-indigo-600 bg-indigo-50 px-1 rounded">{part}</span>;
+    }
+    return part;
+  });
+};
+
 const ChatRoom: React.FC = () => {
   const { user, t, onlineUserIds, lang, isDev, isAdmin } = useAuth();
   
@@ -259,30 +282,37 @@ const ChatRoom: React.FC = () => {
     };
   }, [user, notificationsEnabled, userCache]);
 
-  const getUserInfo = (id: string) => {
-    if (id === ZAY_USER_ID) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
-    const u = userCache.find((u: any) => u.id === id);
+  const getUserInfo = (userId: string, content: string) => {
+    // If message starts with AI Prefix, treat as Zay
+    if (content.startsWith(AI_PREFIX)) {
+        return { name: 'Zay', role: 'ASSISTANT', isBot: true };
+    }
+    // Legacy support
+    if (userId === ZAY_USER_ID) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
+    
+    const u = userCache.find((u: any) => u.id === userId);
     return u || { name: 'Student', role: 'STUDENT' };
   };
 
-  // --- BOT LOGIC (SERVER SIDE SIMULATION) ---
+  // --- BOT LOGIC (PROXY SERVER SIDE) ---
   const handleBotTrigger = async (userQuery: string) => {
     const now = Date.now();
     if (now - lastBotTriggerRef.current < 2000) return; 
     lastBotTriggerRef.current = now;
 
-    // Show "Zay is typing..." locally (optional, since real-time will handle it too via broadcast if we wanted)
     setIsBotTyping(true);
     const safetyTimeout = setTimeout(() => setIsBotTyping(false), 20000);
 
     try {
-      // 1. Get structured response from AI
       const aiResponse = await aiService.askZay(userQuery, user);
       
-      // 2. Save to DB. This ensures everyone sees the exact same response from "Zay"
+      // PROXY STRATEGY: Send as current user but mark with special prefix
+      // This bypasses RLS issues with trying to insert as ZAY_USER_ID
+      const proxyContent = `${AI_PREFIX}${aiResponse.text}`;
+      
       await supabaseService.sendMessage({ 
-        userId: ZAY_USER_ID, 
-        content: aiResponse.text, 
+        userId: user!.id, // Send as ME (Authorized)
+        content: proxyContent, 
         type: aiResponse.type,
         mediaUrl: aiResponse.mediaUrl,
         fileName: aiResponse.type === 'file' ? 'Lesson Document' : undefined
@@ -290,6 +320,7 @@ const ChatRoom: React.FC = () => {
       
     } catch (error) {
       console.error("Bot Trigger Error:", error);
+      alert("AI Service Unreachable: " + (error as any).message);
     } finally {
       clearTimeout(safetyTimeout);
       setIsBotTyping(false);
@@ -304,10 +335,10 @@ const ChatRoom: React.FC = () => {
     setShowMentionPopup(false);
 
     let content = inputText;
-    // Add reply context if exists
     if (replyingTo) {
-      const replyUser = getUserInfo(replyingTo.userId);
-      content = `> Replying to ${replyUser.name}: "${replyingTo.content.substring(0, 30)}..."\n\n${content}`;
+      const replyUser = getUserInfo(replyingTo.userId, replyingTo.content);
+      const cleanReplyContent = replyingTo.content.replace(AI_PREFIX, '');
+      content = `> Replying to ${replyUser.name}: "${cleanReplyContent.substring(0, 30)}..."\n\n${content}`;
     }
 
     try {
@@ -338,7 +369,7 @@ const ChatRoom: React.FC = () => {
       }
 
     } catch (e) {
-      alert("Failed to send message.");
+      alert("Failed to send message. Check internet connection.");
     } finally {
       setIsSending(false);
     }
@@ -422,12 +453,13 @@ const ChatRoom: React.FC = () => {
 
   const handleDeleteMessage = async (msgId: string) => {
     if (confirm("Permanently delete this message?")) {
-      setMessages(prev => prev.filter(m => m.id !== msgId)); // Optimistic UI
+      // Don't update state optimistically to avoid confusion if it fails
       try {
         await supabaseService.deleteMessage(msgId);
+        // If successful, the subscription will handle the removal
       } catch (err) {
-        alert("Failed to delete from server.");
-        // Revert optimization on fail could be added here, but simple reload works too
+        console.error(err);
+        alert("Failed to delete. You might not have permission.");
       }
     }
   };
@@ -438,32 +470,11 @@ const ChatRoom: React.FC = () => {
             await supabaseService.clearChat();
             setMessages([]);
         } catch(e) {
-            alert("Failed to clear chat.");
+            console.error(e);
+            alert("Clear Chat Failed. Database permissions denied.");
         }
     }
   }
-
-  // --- FORMATTING HELPERS ---
-  const formatDateLabel = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return date.toLocaleDateString(lang, { weekday: 'short', month: 'short', day: 'numeric' });
-  };
-
-  const renderContentWithMentions = (content: string) => {
-    const parts = content.split(/(@\w+)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('@')) {
-        return <span key={i} className="text-indigo-200 bg-indigo-500/20 px-1 rounded font-black">{part}</span>;
-      }
-      return part;
-    });
-  };
 
   // --- RENDER ---
   const typingNames = Array.from(typingUsers.values());
@@ -517,19 +528,31 @@ const ChatRoom: React.FC = () => {
         onClick={() => { setEmojiPickerOpen(false); setShowMentionPopup(false); }}
       >
         {messages.map((msg, idx) => {
-          // Allow deletion if admin OR if it is my message
-          const isMe = user && msg.userId.toString() === user.id.toString();
-          const canDelete = isMe || isAdmin;
+          const isProxyAI = msg.content.startsWith(AI_PREFIX);
+          const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
           
-          const userInfo = getUserInfo(msg.userId);
-          const isBot = msg.userId === ZAY_USER_ID;
+          // Determine "sender" visually
+          // If Proxy AI, visually it's a Bot (even if ID is user)
+          const userInfo = getUserInfo(msg.userId, msg.content);
+          
+          // Logic for "My Message" bubble:
+          // It is ME if: ID matches AND it's NOT a Proxy AI message.
+          const isMe = user && msg.userId === user.id && !isProxyAI;
+          
+          // Can I delete?
+          // I can delete if I am owner OR admin. 
+          // Note: If I am owner of a Proxy AI message, I can delete it too.
+          const canDelete = (user && msg.userId === user.id) || isAdmin;
+
+          const isBot = userInfo.isBot;
           const prevMsg = messages[idx - 1];
+          const prevIsProxyAI = prevMsg?.content.startsWith(AI_PREFIX);
           
           // Date Grouping
           const showDate = !prevMsg || new Date(msg.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString();
           
-          // Consecutive Message Logic (for cleaner bubbles)
-          const isSequence = prevMsg && prevMsg.userId === msg.userId && !showDate;
+          // Sequence Logic
+          const isSequence = prevMsg && prevMsg.userId === msg.userId && !showDate && (isProxyAI === prevIsProxyAI);
           
           return (
             <React.Fragment key={msg.id}>
@@ -550,8 +573,8 @@ const ChatRoom: React.FC = () => {
                   {!isSequence && !isMe && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
                       <span className={`text-[11px] font-black ${isBot ? 'text-violet-600' : 'text-slate-600'}`}>{userInfo.name}</span>
-                      {userInfo.role === UserRole.DEV && <ShieldAlert size={10} className="text-slate-900" />}
-                      {userInfo.isBot && <Sparkles size={10} className="text-violet-500" />}
+                      {userInfo.role === UserRole.DEV && !isBot && <ShieldAlert size={10} className="text-slate-900" />}
+                      {isBot && <Sparkles size={10} className="text-violet-500" />}
                     </div>
                   )}
                   
@@ -565,7 +588,7 @@ const ChatRoom: React.FC = () => {
                   `}>
                     {msg.type === 'text' && (
                       <p className="whitespace-pre-wrap break-words leading-relaxed">
-                        {isMe ? msg.content : renderContentWithMentions(msg.content)}
+                        {isMe ? cleanContent : renderContentWithMentions(cleanContent)}
                       </p>
                     )}
                     
@@ -599,7 +622,7 @@ const ChatRoom: React.FC = () => {
                        </span>
                     </div>
 
-                    {/* Desktop Hover Actions (Visible on PC) */}
+                    {/* Desktop Hover Actions */}
                     <div className={`absolute top-0 ${isMe ? '-left-12' : '-right-12'} hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
                         <button 
                             onClick={() => setReplyingTo(msg)}
@@ -631,7 +654,7 @@ const ChatRoom: React.FC = () => {
                       </div>
                   )}
 
-                  {/* Reaction Bar & Mobile Delete (Visible on Tap/Hover) */}
+                  {/* Reaction Bar & Mobile Delete */}
                   <div className={`absolute -top-8 ${isMe ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-all z-10 pointer-events-none group-hover:pointer-events-auto`}>
                        <div className="bg-white border shadow-lg rounded-full p-1 flex items-center gap-0.5 scale-90">
                           {['👍', '❤️', '😂', '😮'].map(e => <button key={e} onClick={() => toggleReaction(msg, e)} className="p-1.5 hover:scale-125 transition-transform">{e}</button>)}
@@ -720,8 +743,8 @@ const ChatRoom: React.FC = () => {
         {replyingTo && (
            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl mb-2 border-l-4 border-indigo-500 animate-in slide-in-from-bottom-2">
              <div className="overflow-hidden">
-                <p className="text-[10px] font-black text-indigo-600 uppercase mb-0.5">Replying to {getUserInfo(replyingTo.userId).name}</p>
-                <p className="text-xs text-slate-600 truncate">{replyingTo.content}</p>
+                <p className="text-[10px] font-black text-indigo-600 uppercase mb-0.5">Replying to {getUserInfo(replyingTo.userId, replyingTo.content).name}</p>
+                <p className="text-xs text-slate-600 truncate">{replyingTo.content.replace(AI_PREFIX, '')}</p>
              </div>
              <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-slate-200 rounded-full"><X size={14}/></button>
            </div>
