@@ -19,8 +19,8 @@ export const storageService = {
           users: parsed.users || [],
           subjects: INITIAL_SUBJECTS, // Always use fresh subjects to ensure translations update
           items: parsed.items || MOCK_ITEMS,
-          // Fix: Added missing timetable property to comply with AppState type definition
           timetable: parsed.timetable || [],
+          lessons: parsed.lessons || [], // Ensure lessons array exists
           language: (parsed.language as Language) || 'fr'
         };
       } catch (e) {
@@ -31,8 +31,8 @@ export const storageService = {
       users: [],
       subjects: INITIAL_SUBJECTS,
       items: MOCK_ITEMS,
-      // Fix: Added missing timetable property to comply with AppState type definition
       timetable: [],
+      lessons: [],
       language: 'fr'
     };
   }
