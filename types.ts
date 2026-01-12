@@ -24,6 +24,19 @@ export interface Resource {
   url: string;
 }
 
+export interface Lesson {
+  id: string;
+  title: string;
+  subjectId: string;
+  type: 'course' | 'summary' | 'exercise' | 'exam_prep';
+  description: string;
+  fileUrl: string;
+  estimatedTime: string; // e.g. "45 min"
+  keywords: string[];
+  isPublished: boolean;
+  createdAt: string;
+}
+
 export interface AcademicItem {
   id: string;
   title: string;
@@ -68,6 +81,7 @@ export interface ChatMessage {
   fileName?: string;
   createdAt: string;
   reactions: Reaction[];
+  readBy: string[]; // Array of User IDs who have read the message
 }
 
 export interface AppState {
@@ -75,5 +89,6 @@ export interface AppState {
   subjects: Subject[];
   items: AcademicItem[];
   timetable: TimetableEntry[];
+  lessons: Lesson[];
   language: Language;
 }
