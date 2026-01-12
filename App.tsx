@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect, createContext, useContext, useCallback, useRef } from 'react';
-import { User, UserRole, AppState, AcademicItem, Subject, Language } from './types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { User, UserRole, AppState, AcademicItem, Language } from './types';
 import { supabaseService, getSupabase } from './services/supabaseService';
 import { storageService } from './services/storageService'; 
 import { TRANSLATIONS, INITIAL_SUBJECTS } from './constants';
+import { AuthContext, AuthContextType } from './AuthContext';
 import Login from './components/Login';
 import DashboardLayout from './components/DashboardLayout';
 import Overview from './components/Overview';
@@ -16,42 +17,19 @@ import DevTools from './components/DevTools';
 import Timetable from './components/Timetable';
 import Credits from './components/Credits';
 import ChatRoom from './components/ChatRoom';
-import { CloudOff, AlertTriangle, WifiOff, RefreshCcw } from 'lucide-react';
-
-interface AuthContextType {
-  user: User | null;
-  login: (email: string, remember: boolean) => Promise<boolean>;
-  register: (name: string, email: string, remember: boolean, secret?: string) => Promise<boolean>;
-  logout: () => void;
-  isDev: boolean;
-  isAdmin: boolean;
-  t: (key: string) => string;
-  lang: Language;
-  setLang: (l: Language) => void;
-  onlineUserIds: Set<string>;
-}
-
-const AuthContext = createContext<AuthContextType | null>(null);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within AuthProvider");
-  return context;
-};
+import { CloudOff, AlertTriangle, WifiOff } from 'lucide-react';
 
 const App: React.FC = () => {
-  // 1. Initialize State with Local Storage if available (Offline First Strategy)
   const [appState, setAppState] = useState<AppState>(() => {
     const local = storageService.loadState();
     return {
       ...local,
-      subjects: INITIAL_SUBJECTS // Always use constant subjects to ensure icons/translations work
+      subjects: INITIAL_SUBJECTS 
     };
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState('overview');
-  const [isLoading, setIsLoading] = useState(false); 
   const [configError, setConfigError] = useState<string | null>(null);
   const [syncWarning, setSyncWarning] = useState<boolean>(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -66,7 +44,6 @@ const App: React.FC = () => {
     localStorage.removeItem('hub_user_session');
     setCurrentUser(null);
     setCurrentView('overview');
-    console.log("Forced Eviction: Session Cleared.");
   }, []);
 
   const syncFromCloud = async () => {
@@ -76,7 +53,7 @@ const App: React.FC = () => {
     }
 
     if (!supabaseService.isConfigured()) {
-      setConfigError("Missing Supabase Configuration. Please set VITE_SUPABASE_URL and VITE_SUPABASE_KEY in your Vercel Environment Variables.");
+      setConfigError("Missing Supabase Configuration.");
       return;
     }
 
@@ -97,26 +74,21 @@ const App: React.FC = () => {
 
       if (currentUserRef.current) {
         const dbMe = cloudData.users.find(u => u.id === currentUserRef.current?.id);
-        
         if (!dbMe) {
-          console.warn("Security: Your account no longer exists in the cloud database.");
           logout();
           return;
         }
-
         if (dbMe.role !== currentUserRef.current?.role) {
           const updated = { ...currentUserRef.current, role: dbMe.role };
           setCurrentUser(updated);
           localStorage.setItem('hub_user_session', JSON.stringify(updated));
         }
       }
-
       setConfigError(null);
       setSyncWarning(false);
     } catch (e: any) {
-      console.error("Cloud sync failure:", e);
-      if (e.message?.includes("key") || e.message?.includes("URL") || e.message?.includes("Configuration")) {
-        setConfigError(e.message || "Failed to connect to cloud database.");
+      if (e.message?.includes("key") || e.message?.includes("URL")) {
+        setConfigError(e.message);
       } else {
         setSyncWarning(true);
       }
@@ -133,15 +105,9 @@ const App: React.FC = () => {
         localStorage.removeItem('hub_user_session');
       }
     }
-    
     syncFromCloud();
-
-    const handleOnline = () => { 
-      setIsBrowserOffline(false); 
-      syncFromCloud();
-    };
+    const handleOnline = () => { setIsBrowserOffline(false); syncFromCloud(); };
     const handleOffline = () => setIsBrowserOffline(true);
-    
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
@@ -154,11 +120,9 @@ const App: React.FC = () => {
     if (!currentUser || isBrowserOffline) return;
     try {
       const supabase = getSupabase();
-      
       const presenceChannel = supabase.channel('classroom_presence', {
         config: { presence: { key: currentUser.id } },
       });
-
       presenceChannel
         .on('presence', { event: 'sync' }, () => {
           const state = presenceChannel.presenceState();
@@ -169,36 +133,9 @@ const App: React.FC = () => {
             await presenceChannel.track({ user_id: currentUser.id, online_at: new Date().toISOString() });
           }
         });
-
-      const userEvictionChannel = supabase.channel('user_security_monitor')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
-          const impactedId = (payload.new as any)?.id || (payload.old as any)?.id;
-          
-          if (currentUserRef.current && impactedId === currentUserRef.current.id) {
-            if (payload.eventType === 'DELETE') {
-              logout();
-              alert("Unauthorized: Your access has been revoked by an administrator.");
-              return;
-            }
-            if (payload.eventType === 'UPDATE') {
-              const fresh = payload.new as any;
-              const updatedUser = { ...currentUserRef.current, role: fresh.role as UserRole, name: fresh.name };
-              setCurrentUser(updatedUser);
-              localStorage.setItem('hub_user_session', JSON.stringify(updatedUser));
-            }
-          }
-          syncFromCloud();
-        })
-        .subscribe();
-
-      return () => { 
-        presenceChannel.unsubscribe(); 
-        userEvictionChannel.unsubscribe();
-      };
-    } catch (e) {
-      console.warn("Security socket error:", e);
-    }
-  }, [currentUser?.id, logout, isBrowserOffline]);
+      return () => { presenceChannel.unsubscribe(); };
+    } catch (e) {}
+  }, [currentUser?.id, isBrowserOffline]);
 
   useEffect(() => {
     document.documentElement.dir = appState.language === 'ar' ? 'rtl' : 'ltr';
@@ -215,30 +152,21 @@ const App: React.FC = () => {
         if (remember) localStorage.setItem('hub_user_session', JSON.stringify(localUser));
         return true;
       }
-      alert("Offline Mode: User not found in local cache. Connect to internet first.");
       return false;
     }
-
     try {
       const { data, error } = await supabaseService.getUserByEmail(email);
       if (data && !error) {
         setCurrentUser(data);
-        if (remember) {
-          localStorage.setItem('hub_user_session', JSON.stringify(data));
-        }
+        if (remember) localStorage.setItem('hub_user_session', JSON.stringify(data));
         return true;
       }
-    } catch (e: any) {
-      alert(e.message || "Login failed.");
-    }
+    } catch (e) {}
     return false;
   };
 
   const register = async (name: string, email: string, remember: boolean, secret?: string) => {
-    if (isBrowserOffline) {
-      alert("Registration requires internet connection.");
-      return false;
-    }
+    if (isBrowserOffline) return false;
     const role = (secret === 'otmane55') ? UserRole.DEV : UserRole.STUDENT;
     const newUser: User = {
       id: crypto.randomUUID(),
@@ -248,21 +176,16 @@ const App: React.FC = () => {
       createdAt: new Date().toISOString(),
       studentNumber: `STU-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
     };
-
     try {
       const { error } = await supabaseService.registerUser(newUser);
       if (error) throw error;
       const newUsers = [...appState.users, newUser];
       setAppState(prev => ({ ...prev, users: newUsers }));
       storageService.saveState({ ...appState, users: newUsers });
-      
       setCurrentUser(newUser);
-      if (remember) {
-        localStorage.setItem('hub_user_session', JSON.stringify(newUser));
-      }
+      if (remember) localStorage.setItem('hub_user_session', JSON.stringify(newUser));
       return true;
-    } catch (e: any) {
-      alert(e.message || "Registration failed.");
+    } catch (e) {
       return false;
     }
   };
@@ -284,20 +207,9 @@ const App: React.FC = () => {
       storageService.saveState(next);
       return next;
     });
-
     if (!isBrowserOffline && updates.timetable) {
       try { await supabaseService.updateTimetable(updates.timetable); } catch (e) {}
     }
-  };
-
-  const handleCalendarEditRequest = (item: AcademicItem) => {
-    setPendingEditItem(item);
-    setCurrentView('admin');
-  };
-
-  const handleSubjectSelectFromOverview = (subjectId: string) => {
-    setSelectedSubjectId(subjectId);
-    setCurrentView('subjects');
   };
 
   const authValue: AuthContextType = { 
@@ -313,9 +225,7 @@ const App: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black text-slate-900">Cloud Connection Error</h1>
           <p className="text-slate-500 font-bold text-sm leading-relaxed">{configError}</p>
-          <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg">
-            Retry Connection
-          </button>
+          <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg">Retry Connection</button>
         </div>
       </div>
     );
@@ -342,17 +252,17 @@ const App: React.FC = () => {
           <DashboardLayout currentView={currentView} setView={setCurrentView}>
             {(() => {
               switch (currentView) {
-                case 'overview': return <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={handleSubjectSelectFromOverview} />;
+                case 'overview': return <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={(id) => { setSelectedSubjectId(id); setCurrentView('subjects'); }} />;
                 case 'chat': return <ChatRoom />;
-                case 'calendar': return <CalendarView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} onEditRequest={handleCalendarEditRequest} />;
+                case 'calendar': return <CalendarView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} onEditRequest={(item) => { setPendingEditItem(item); setCurrentView('admin'); }} />;
                 case 'timetable': return <Timetable entries={appState.timetable} subjects={appState.subjects} onUpdate={updateAppState} />;
                 case 'subjects': return <SubjectsView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialSubjectId={selectedSubjectId} clearInitialSubject={() => setSelectedSubjectId(null)} />;
                 case 'lessons': return <LessonsView state={appState} />;
                 case 'classlist': return <ClassList users={appState.users} onUpdate={updateAppState} />;
                 case 'credits': return <Credits />;
-                case 'admin': return isAdmin ? <AdminPanel items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialEditItem={pendingEditItem} onEditHandled={() => setPendingEditItem(null)} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={handleSubjectSelectFromOverview} />;
-                case 'dev': return isDev ? <DevTools state={appState} onUpdate={updateAppState} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={handleSubjectSelectFromOverview} />;
-                default: return <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={handleSubjectSelectFromOverview} />;
+                case 'admin': return isAdmin ? <AdminPanel items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialEditItem={pendingEditItem} onEditHandled={() => setPendingEditItem(null)} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
+                case 'dev': return isDev ? <DevTools state={appState} onUpdate={updateAppState} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
+                default: return <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
               }
             })()}
           </DashboardLayout>
