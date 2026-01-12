@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
-import { AppState, Subject, Lesson } from '../types';
-import { useAuth } from '../App';
+import { AppState, Lesson } from '../types';
+import { useAuth } from '../AuthContext';
 import { SUBJECT_ICONS } from '../constants';
-import { BookOpen, Calendar, Clock, Download, Search, FileText, Image as ImageIcon, Filter, ChevronDown, ChevronRight } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Search, FileText, Image as ImageIcon, Filter } from 'lucide-react';
 
 interface Props {
   state: AppState;
@@ -14,7 +14,6 @@ const LessonsView: React.FC<Props> = ({ state }) => {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // 1. Filter Lessons
   const filteredLessons = useMemo(() => {
     return state.lessons
       .filter(l => l.isPublished)
@@ -29,10 +28,8 @@ const LessonsView: React.FC<Props> = ({ state }) => {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [state.lessons, selectedSubjectId, searchTerm]);
 
-  // 2. Group by Subject for display if "All" is selected, otherwise just list
   const groupedLessons = useMemo(() => {
     if (selectedSubjectId !== 'all') return { [selectedSubjectId]: filteredLessons };
-    
     const groups: Record<string, Lesson[]> = {};
     filteredLessons.forEach(l => {
       if (!groups[l.subjectId]) groups[l.subjectId] = [];
@@ -54,8 +51,6 @@ const LessonsView: React.FC<Props> = ({ state }) => {
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Lesson Library</h1>
           <p className="text-slate-500 font-bold text-sm">Access course materials, summaries, and exercises.</p>
         </div>
-        
-        {/* Search Bar */}
         <div className="relative w-full md:w-64">
           <Search size={18} className="absolute left-4 top-3.5 text-slate-400" />
           <input 
@@ -68,7 +63,6 @@ const LessonsView: React.FC<Props> = ({ state }) => {
         </div>
       </div>
 
-      {/* Subject Filter Tabs */}
       <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
         <button
           onClick={() => setSelectedSubjectId('all')}
@@ -95,7 +89,6 @@ const LessonsView: React.FC<Props> = ({ state }) => {
         ))}
       </div>
 
-      {/* Content Area */}
       {Object.keys(groupedLessons).length === 0 ? (
         <div className="text-center py-20 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
            <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
