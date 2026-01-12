@@ -265,25 +265,29 @@ const ChatRoom: React.FC = () => {
     return u || { name: 'Student', role: 'STUDENT' };
   };
 
-  // --- BOT LOGIC ---
+  // --- BOT LOGIC (SERVER SIDE SIMULATION) ---
   const handleBotTrigger = async (userQuery: string) => {
     const now = Date.now();
     if (now - lastBotTriggerRef.current < 2000) return; 
     lastBotTriggerRef.current = now;
 
+    // Show "Zay is typing..." locally (optional, since real-time will handle it too via broadcast if we wanted)
     setIsBotTyping(true);
     const safetyTimeout = setTimeout(() => setIsBotTyping(false), 20000);
 
     try {
-      const responseText = await aiService.askZay(userQuery, user);
+      // 1. Get structured response from AI
+      const aiResponse = await aiService.askZay(userQuery, user);
       
-      // CRITICAL: Send to server only. Rely on subscription for display.
-      // This ensures AI messages are "server-side" and shared with everyone.
+      // 2. Save to DB. This ensures everyone sees the exact same response from "Zay"
       await supabaseService.sendMessage({ 
         userId: ZAY_USER_ID, 
-        content: responseText, 
-        type: 'text' 
+        content: aiResponse.text, 
+        type: aiResponse.type,
+        mediaUrl: aiResponse.mediaUrl,
+        fileName: aiResponse.type === 'file' ? 'Lesson Document' : undefined
       });
+      
     } catch (error) {
       console.error("Bot Trigger Error:", error);
     } finally {
@@ -418,15 +422,12 @@ const ChatRoom: React.FC = () => {
 
   const handleDeleteMessage = async (msgId: string) => {
     if (confirm("Permanently delete this message?")) {
-      // Optimistic
-      setMessages(prev => prev.filter(m => m.id !== msgId));
+      setMessages(prev => prev.filter(m => m.id !== msgId)); // Optimistic UI
       try {
         await supabaseService.deleteMessage(msgId);
       } catch (err) {
         alert("Failed to delete from server.");
-        // Reload messages if failed
-        const msgs = await supabaseService.fetchMessages(100);
-        setMessages(msgs);
+        // Revert optimization on fail could be added here, but simple reload works too
       }
     }
   };
@@ -516,8 +517,10 @@ const ChatRoom: React.FC = () => {
         onClick={() => { setEmojiPickerOpen(false); setShowMentionPopup(false); }}
       >
         {messages.map((msg, idx) => {
-          // Robust isMe check to ensure users can delete their own messages
+          // Allow deletion if admin OR if it is my message
           const isMe = user && msg.userId.toString() === user.id.toString();
+          const canDelete = isMe || isAdmin;
+          
           const userInfo = getUserInfo(msg.userId);
           const isBot = msg.userId === ZAY_USER_ID;
           const prevMsg = messages[idx - 1];
@@ -574,7 +577,7 @@ const ChatRoom: React.FC = () => {
 
                     {msg.type === 'file' && (
                       <div className="flex items-center gap-3 bg-black/5 p-3 rounded-xl border border-black/5">
-                          <FileIcon size={20}/><a href={msg.mediaUrl || '#'} target="_blank" className="text-xs underline font-black truncate max-w-[150px]">{msg.fileName}</a>
+                          <FileIcon size={20}/><a href={msg.mediaUrl || '#'} target="_blank" className="text-xs underline font-black truncate max-w-[150px]">{msg.fileName || 'Attachment'}</a>
                       </div>
                     )}
 
@@ -605,7 +608,7 @@ const ChatRoom: React.FC = () => {
                         >
                             <Reply size={14} />
                         </button>
-                        {(isMe || isAdmin) && (
+                        {canDelete && (
                            <button 
                              onClick={() => handleDeleteMessage(msg.id)}
                              className="p-1.5 text-slate-400 hover:text-rose-500 bg-white rounded-full shadow-sm"
@@ -632,7 +635,7 @@ const ChatRoom: React.FC = () => {
                   <div className={`absolute -top-8 ${isMe ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-all z-10 pointer-events-none group-hover:pointer-events-auto`}>
                        <div className="bg-white border shadow-lg rounded-full p-1 flex items-center gap-0.5 scale-90">
                           {['👍', '❤️', '😂', '😮'].map(e => <button key={e} onClick={() => toggleReaction(msg, e)} className="p-1.5 hover:scale-125 transition-transform">{e}</button>)}
-                          {(isMe || isAdmin) && (
+                          {canDelete && (
                             <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 text-slate-400 hover:text-rose-500 md:hidden">
                               <Trash2 size={14} />
                             </button>
@@ -671,7 +674,7 @@ const ChatRoom: React.FC = () => {
                     <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                     <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce"></div>
                  </div>
-                 <span className="text-[10px] font-black text-violet-600 uppercase tracking-widest">Zay is thinking...</span>
+                 <span className="text-[10px] font-black text-violet-600 uppercase tracking-widest">Thinking...</span>
               </div>
            </div>
         )}
