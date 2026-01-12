@@ -263,7 +263,8 @@ export const supabaseService = {
       mediaUrl: m.media_url,
       fileName: m.file_name,
       createdAt: m.created_at,
-      reactions: m.reactions || []
+      reactions: m.reactions || [],
+      readBy: m.read_by || []
     })) as ChatMessage[];
   },
 
@@ -285,6 +286,12 @@ export const supabaseService = {
   deleteMessage: async (id: string) => {
     const client = getSupabase();
     const { error } = await client.from('messages').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  clearChat: async () => {
+    const client = getSupabase();
+    const { error } = await client.from('messages').delete().neq('id', '0');
     if (error) throw error;
   },
 
