@@ -322,20 +322,31 @@ export const supabaseService = {
       reactions: []
     }]).select();
     
-    if (error) throw error;
+    if (error) {
+        console.error("SendMessage Error:", error);
+        throw error;
+    }
     return data?.[0];
   },
 
   deleteMessage: async (id: string) => {
     const client = getSupabase();
     const { error } = await client.from('messages').delete().eq('id', id);
-    if (error) throw error;
+    if (error) {
+        console.error("DeleteMessage Error:", error);
+        throw error;
+    }
+    return { error: null };
   },
 
   clearChat: async () => {
     const client = getSupabase();
-    const { error } = await client.from('messages').delete().neq('id', '0');
-    if (error) throw error;
+    const { error } = await client.from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Use UUID format safe for all DBs
+    if (error) {
+        console.error("ClearChat Error:", error);
+        throw error;
+    }
+    return { error: null };
   },
 
   uploadChatMedia: async (file: Blob | File, bucket = 'chat-attachments') => {
@@ -344,7 +355,6 @@ export const supabaseService = {
     const ext = isFile ? (file as File).name.split('.').pop() : 'webm';
     const fileName = `${crypto.randomUUID()}.${ext}`;
     
-    // Explicitly set content type to ensure browser playback
     const options = {
         upsert: false,
         contentType: isFile ? file.type : 'audio/webm'
