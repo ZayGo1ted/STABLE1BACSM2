@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { useAuth } from '../App';
+import { useAuth } from '../AuthContext';
 import { AcademicItem, Subject } from '../types';
 import { Calendar, Clock, BookOpen, AlertCircle, FileText, ChevronRight, Activity } from 'lucide-react';
 import { SUBJECT_ICONS } from '../constants';
