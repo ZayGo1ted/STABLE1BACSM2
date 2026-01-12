@@ -1,6 +1,6 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { AppState, User, AcademicItem, TimetableEntry, Resource, UserRole, ChatMessage, Reaction } from '../types';
+import { AppState, User, AcademicItem, TimetableEntry, Resource, UserRole, ChatMessage, Reaction, Lesson } from '../types';
 
 /**
  * Robust Environment Variable Retrieval for Vercel/Vite
@@ -49,16 +49,19 @@ export const supabaseService = {
       { data: users, error: uErr },
       { data: items, error: iErr },
       { data: timetable, error: tErr },
-      { data: resources, error: rErr }
+      { data: resources, error: rErr },
+      { data: lessons, error: lErr }
     ] = await Promise.all([
       client.from('users').select('*'),
       client.from('academic_items').select('*'),
       client.from('timetable').select('*'),
-      client.from('resources').select('*')
+      client.from('resources').select('*'),
+      client.from('lessons').select('*')
     ]);
 
     if (uErr) console.warn("Fetch users error:", uErr);
     if (iErr) console.warn("Fetch items error:", iErr);
+    if (lErr) console.warn("Fetch lessons error:", lErr);
 
     const mappedItems = (items || []).map(item => ({
       id: item.id,
@@ -79,6 +82,19 @@ export const supabaseService = {
         }))
     }));
 
+    const mappedLessons = (lessons || []).map(l => ({
+      id: l.id,
+      title: l.title,
+      subjectId: l.subject_id,
+      type: l.type,
+      description: l.description,
+      fileUrl: l.file_url,
+      estimatedTime: l.estimated_time,
+      keywords: l.keywords || [],
+      isPublished: l.is_published,
+      createdAt: l.created_at
+    }));
+
     return {
       users: (users || []).map(u => ({
         id: u.id,
@@ -97,7 +113,8 @@ export const supabaseService = {
         subjectId: entry.subject_id,
         color: entry.color,
         room: entry.room
-      }))
+      })),
+      lessons: mappedLessons
     };
   },
 
@@ -232,6 +249,32 @@ export const supabaseService = {
       }));
       await client.from('timetable').insert(dbEntries);
     }
+  },
+
+  // --- LESSON MANAGEMENT ---
+  createLesson: async (lesson: Lesson) => {
+    const client = getSupabase();
+    const { data, error } = await client.from('lessons').insert([{
+      id: lesson.id,
+      title: lesson.title,
+      subject_id: lesson.subjectId,
+      type: lesson.type,
+      description: lesson.description,
+      file_url: lesson.fileUrl,
+      estimated_time: lesson.estimatedTime,
+      keywords: lesson.keywords,
+      is_published: lesson.isPublished,
+      created_at: lesson.createdAt
+    }]).select().single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  deleteLesson: async (id: string) => {
+    const client = getSupabase();
+    const { error } = await client.from('lessons').delete().eq('id', id);
+    if (error) throw error;
   },
 
   uploadFile: async (file: File) => {
