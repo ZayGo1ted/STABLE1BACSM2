@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { AppState, User } from '../types';
+import { AppState, User, Lesson, Subject } from '../types';
 import { storageService } from './storageService';
 
 /**
@@ -44,6 +44,37 @@ export const aiService = {
 
       const subjectsList = appState.subjects.map(s => s.name.en).join(', ');
 
+      // 5.1 LESSON RETRIEVAL (Basic RAG)
+      // Filter published lessons relevant to the query based on basic keyword matching
+      const queryLower = userQuery.toLowerCase();
+      const relevantLessons = appState.lessons
+        .filter(l => l.isPublished)
+        .filter(l => {
+          const contentMatch = l.title.toLowerCase().includes(queryLower) || 
+                               l.description.toLowerCase().includes(queryLower) ||
+                               l.keywords.some(k => queryLower.includes(k.toLowerCase()));
+          // Also match subject name if explicitly mentioned
+          const subject = appState.subjects.find(s => s.id === l.subjectId);
+          const subjectMatch = subject ? queryLower.includes(subject.name.en.toLowerCase()) || 
+                                         queryLower.includes(subject.name.fr.toLowerCase()) : false;
+          
+          return contentMatch || subjectMatch;
+        })
+        .slice(0, 5); // Limit to top 5 matches to save context
+
+      const lessonContext = relevantLessons.map(l => {
+          const subject = appState.subjects.find(s => s.id === l.subjectId)?.name.en || 'General';
+          return `
+            [LESSON MATCH]
+            Title: ${l.title}
+            Subject: ${subject}
+            Type: ${l.type}
+            Desc: ${l.description}
+            Time: ${l.estimatedTime}
+            URL: ${l.fileUrl}
+          `;
+      }).join('\n');
+
       const systemInstruction = `
         You are @Zay, the smart classroom assistant for "1BacSM" (Science Math).
         
@@ -52,15 +83,23 @@ export const aiService = {
         - User: ${requestingUser?.name || 'Student'}
         
         **DATA:**
-        - Upcoming: ${upcomingItems.length ? upcomingItems.join('; ') : 'Nothing scheduled soon.'}
+        - Upcoming Tasks: ${upcomingItems.length ? upcomingItems.join('; ') : 'Nothing scheduled soon.'}
         - Subjects: ${subjectsList}
+        
+        **LESSON DATABASE (Use this if the user asks for a lesson/document):**
+        ${lessonContext || "No specific lessons found for this query."}
 
         **STRICT RULES:**
         1. Keep responses EXTREMELY SHORT and direct. Maximum 1-2 sentences.
-        2. Do NOT ask follow-up questions. Do NOT try to continue the conversation.
-        3. Do NOT use Markdown formatting. NO asterisks (*), NO bold, NO italics. Plain text only.
-        4. Be friendly but efficient.
-        5. If asked about exams/schedule, use the provided data.
+        2. Do NOT ask follow-up questions.
+        3. Do NOT use Markdown formatting (No bold, no italics) unless providing a link.
+        4. IF YOU FIND A MATCHING LESSON in the database above, you MUST respond using this EXACT format:
+           "📘 [Title]
+            [Short Description]
+            ⏱️ [Time]
+            📄 [URL]"
+        5. If multiple lessons match, list the top 2.
+        6. If no lesson matches but the user asked for one, say: "I don't have that lesson yet. Check with your teacher."
       `;
 
       // 6. Generate Content
@@ -79,8 +118,8 @@ export const aiService = {
       const text = response.text;
       if (!text) throw new Error("Received empty response from AI.");
       
-      // Safety: Strip markdown symbols just in case
-      return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
+      // Safety: Strip markdown symbols just in case (except links)
+      return text.trim();
 
     } catch (error: any) {
       console.error("AI Generation Failed:", error);
