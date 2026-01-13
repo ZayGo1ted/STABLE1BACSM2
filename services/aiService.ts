@@ -58,7 +58,7 @@ ENTRY_END`;
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: userQuery,
         config: { systemInstruction, temperature: 0.1 },
       });
