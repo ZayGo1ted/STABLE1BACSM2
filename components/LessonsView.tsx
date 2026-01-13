@@ -1,9 +1,8 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { AppState, Lesson } from '../types';
 import { useAuth } from '../AuthContext';
 import { SUBJECT_ICONS } from '../constants';
-import { BookOpen, Calendar, Clock, Search, FileText, Image as ImageIcon, Filter } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Search, FileText, Image as ImageIcon, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Props {
   state: AppState;
@@ -13,6 +12,7 @@ const LessonsView: React.FC<Props> = ({ state }) => {
   const { t, lang } = useAuth();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const filteredLessons = useMemo(() => {
     return state.lessons
@@ -44,6 +44,10 @@ const LessonsView: React.FC<Props> = ({ state }) => {
     return <FileText size={16} />;
   };
 
+  const scroll = (offset: number) => {
+    if (scrollRef.current) scrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-700 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -63,30 +67,36 @@ const LessonsView: React.FC<Props> = ({ state }) => {
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
-        <button
-          onClick={() => setSelectedSubjectId('all')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border ${
-            selectedSubjectId === 'all' 
-              ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
-              : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <Filter size={14} /> All Subjects
-        </button>
-        {state.subjects.map(subj => (
-          <button
-            key={subj.id}
-            onClick={() => setSelectedSubjectId(subj.id)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border ${
-              selectedSubjectId === subj.id 
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
-                : 'bg-white text-slate-400 border-slate-200 hover:border-indigo-200'
+      {/* Enhanced Horizontal Scroll Wheel */}
+      <div className="relative group">
+        <button onClick={() => scroll(-200)} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg border border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex"><ChevronLeft size={20}/></button>
+        <button onClick={() => scroll(200)} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg border border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex"><ChevronRight size={20}/></button>
+        
+        <div ref={scrollRef} className="flex gap-3 overflow-x-auto hide-scrollbar py-4 px-1 snap-x snap-mandatory">
+            <button
+            onClick={() => setSelectedSubjectId('all')}
+            className={`snap-start flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border-2 ${
+                selectedSubjectId === 'all' 
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' 
+                : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300 shadow-sm'
             }`}
-          >
-            {subj.name[lang]}
-          </button>
-        ))}
+            >
+            <Filter size={14} /> All
+            </button>
+            {state.subjects.map(subj => (
+            <button
+                key={subj.id}
+                onClick={() => setSelectedSubjectId(subj.id)}
+                className={`snap-start flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border-2 ${
+                selectedSubjectId === subj.id 
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl scale-105' 
+                    : 'bg-white text-slate-400 border-slate-100 hover:border-indigo-200 shadow-sm'
+                }`}
+            >
+                {subj.name[lang]}
+            </button>
+            ))}
+        </div>
       </div>
 
       {Object.keys(groupedLessons).length === 0 ? (
@@ -97,7 +107,7 @@ const LessonsView: React.FC<Props> = ({ state }) => {
         </div>
       ) : (
         <div className="space-y-8">
-          {Object.entries(groupedLessons).map(([subjId, lessons]) => {
+          {(Object.entries(groupedLessons) as [string, Lesson[]][]).map(([subjId, lessons]) => {
             const subject = state.subjects.find(s => s.id === subjId);
             if (!subject) return null;
 
@@ -119,14 +129,14 @@ const LessonsView: React.FC<Props> = ({ state }) => {
                          <div>
                             <div className="flex justify-between items-start mb-3">
                                <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${
-                                 lesson.type === 'course' ? 'bg-indigo-50 text-indigo-600' :
+                                 lesson.type === 'lesson' ? 'bg-indigo-50 text-indigo-600' :
                                  lesson.type === 'exercise' ? 'bg-emerald-50 text-emerald-600' :
                                  lesson.type === 'summary' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'
                                }`}>
                                  {lesson.type.replace('_', ' ')}
                                </span>
                                <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                                 <Calendar size={12} /> {new Date(lesson.createdAt).toLocaleDateString()}
+                                 <Calendar size={12} /> {lesson.date || new Date(lesson.createdAt).toLocaleDateString()}
                                </span>
                             </div>
                             
@@ -145,17 +155,21 @@ const LessonsView: React.FC<Props> = ({ state }) => {
                             </div>
                          </div>
 
-                         <div className="pt-4 border-t border-slate-50 flex items-center justify-between mt-auto">
-                            <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                               <Clock size={12} /> {lesson.estimatedTime}
-                            </div>
+                         <div className="pt-4 border-t border-slate-50 space-y-3 mt-auto">
+                            {lesson.startTime && lesson.endTime && (
+                              <div className="flex items-center gap-2 text-slate-500 text-[10px] font-bold bg-slate-50 p-2 rounded-lg">
+                                <Clock size={12} className="text-indigo-500" />
+                                <span>Written: {lesson.startTime} - {lesson.endTime}</span>
+                              </div>
+                            )}
+
                             <a 
-                              href={lesson.fileUrl} 
-                              target="_blank" 
-                              download
-                              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-lg shadow-slate-200"
+                                href={lesson.fileUrl} 
+                                target="_blank" 
+                                download
+                                className="flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-lg shadow-slate-200 w-full"
                             >
-                              {getFileIcon(lesson.fileUrl)} Download
+                                {getFileIcon(lesson.fileUrl)} Download
                             </a>
                          </div>
                       </div>
