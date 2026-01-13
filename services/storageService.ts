@@ -1,4 +1,3 @@
-
 import { AppState, User, UserRole, Language } from '../types';
 import { INITIAL_SUBJECTS, MOCK_ITEMS } from '../constants';
 
@@ -19,8 +18,8 @@ export const storageService = {
           users: parsed.users || [],
           subjects: INITIAL_SUBJECTS, // Always use fresh subjects to ensure translations update
           items: parsed.items || MOCK_ITEMS,
-          timetable: parsed.timetable || [],
           lessons: parsed.lessons || [], // Ensure lessons array exists
+          timetable: parsed.timetable || [], // Ensure timetable array exists
           language: (parsed.language as Language) || 'fr'
         };
       } catch (e) {
@@ -31,9 +30,10 @@ export const storageService = {
       users: [],
       subjects: INITIAL_SUBJECTS,
       items: MOCK_ITEMS,
-      timetable: [],
       lessons: [],
+      timetable: [],
       language: 'fr'
     };
   }
 };
+
