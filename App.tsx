@@ -266,7 +266,7 @@ const App: React.FC = () => {
                 case 'chat': return <ChatRoom />;
                 case 'calendar': return <CalendarView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} onEditRequest={(item) => { setPendingEditItem(item); setCurrentView('admin'); }} />;
                 case 'subjects': return <SubjectsView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialSubjectId={selectedSubjectId} clearInitialSubject={() => setSelectedSubjectId(null)} />;
-                case 'lessons': return <LessonsView state={appState} />;
+                case 'lessons': return <LessonsView state={appState} onUpdate={updateAppState} />;
                 case 'classlist': return <ClassList users={appState.users} onUpdate={updateAppState} />;
                 case 'credits': return <Credits />;
                 case 'admin': return isAdmin ? <AdminPanel items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialEditItem={pendingEditItem} initialEditLesson={pendingEditLesson} onEditHandled={() => { setPendingEditItem(null); setPendingEditLesson(null); }} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
