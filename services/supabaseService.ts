@@ -1,34 +1,27 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { AppState, User, AcademicItem, TimetableEntry, Resource, UserRole, ChatMessage, Reaction, Lesson } from '../types';
+import { AppState, User, AcademicItem, Resource, UserRole, ChatMessage, Reaction, Lesson, AiLog } from '../types';
 
-const getEnvVar = (key: string): string => {
-  const metaEnv = (import.meta as any).env;
-  if (metaEnv && metaEnv[key]) return metaEnv[key];
-  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key];
-  if (typeof window !== 'undefined' && (window as any)[key]) return (window as any)[key];
-  return '';
-};
-
-const SUPABASE_URL = getEnvVar('VITE_SUPABASE_URL') || 'https://lbfdweyzaqmlkcfgixmn.supabase.co';
-const API_KEY = getEnvVar('VITE_SUPABASE_ANON_KEY') || getEnvVar('API_KEY') || getEnvVar('VITE_API_KEY');
+// Hardcoded Supabase configuration for the classroom hub
+const SUPABASE_URL = 'https://lbfdweyzaqmlkcfgixmn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxiZmR3ZXl6YXFtbGtjZmdpeG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY2ODE1NjAsImV4cCI6MjA4MjI1NzU2MH0.wD_mWSrD1ayCeEzVOcLPgn1ihxXemwzHYXSB_3IsjlQ';
 
 let supabaseInstance: SupabaseClient | null = null;
 
 export const getSupabase = () => {
-  if (!supabaseInstance) supabaseInstance = createClient(SUPABASE_URL, API_KEY);
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
   return supabaseInstance;
 };
 
 export const supabaseService = {
-  isConfigured: () => API_KEY.length > 0 && SUPABASE_URL.length > 0,
+  isConfigured: () => true,
 
   fetchFullState: async () => {
     const client = getSupabase();
-    const [ { data: users }, { data: items }, { data: timetable }, { data: resources }, { data: lessons } ] = await Promise.all([
+    const [ { data: users }, { data: items }, { data: resources }, { data: lessons } ] = await Promise.all([
       client.from('users').select('*'),
       client.from('academic_items').select('*'),
-      client.from('timetable').select('*'),
       client.from('resources').select('*'),
       client.from('lessons').select('*')
     ]);
@@ -51,8 +44,11 @@ export const supabaseService = {
       subjectId: l.subject_id,
       type: l.type,
       description: l.description,
+      aiMetadata: l.ai_metadata || '',
       fileUrl: l.file_url,
-      estimatedTime: l.estimated_time,
+      date: l.date_written || '', // Map date
+      startTime: l.start_time || '', 
+      endTime: l.end_time || '',
       keywords: l.keywords || [],
       isPublished: l.is_published,
       createdAt: l.created_at
@@ -61,11 +57,11 @@ export const supabaseService = {
     return {
       users: (users || []).map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role as UserRole, studentNumber: u.student_number, createdAt: u.created_at })),
       items: mappedItems,
-      timetable: (timetable || []).map(entry => ({ id: entry.id, day: entry.day, startHour: entry.start_hour, endHour: entry.end_hour, subjectId: entry.subject_id, color: entry.color, room: entry.room })),
       lessons: mappedLessons
     };
   },
 
+  // ... User and AcademicItem methods remain unchanged ...
   registerUser: async (user: User) => getSupabase().from('users').insert([{ id: user.id, email: user.email.toLowerCase(), name: user.name, role: user.role, student_number: user.studentNumber, created_at: user.createdAt }]),
   updateUser: async (user: User) => getSupabase().from('users').update({ name: user.name, role: user.role, student_number: user.studentNumber }).eq('id', user.id),
   deleteUser: async (id: string) => getSupabase().from('users').delete().eq('id', id),
@@ -88,21 +84,65 @@ export const supabaseService = {
   },
 
   deleteAcademicItem: async (id: string) => getSupabase().from('academic_items').delete().eq('id', id),
-  updateTimetable: async (entries: TimetableEntry[]) => {
-    const client = getSupabase();
-    await client.from('timetable').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    if (entries.length > 0) await client.from('timetable').insert(entries.map(e => ({ id: e.id, day: e.day, start_hour: e.startHour, end_hour: e.endHour, subject_id: e.subjectId, color: e.color, room: e.room })));
-  },
 
-  createLesson: async (lesson: Lesson) => getSupabase().from('lessons').insert([{ id: lesson.id, title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, file_url: lesson.fileUrl, estimated_time: lesson.estimatedTime, keywords: lesson.keywords, is_published: lesson.isPublished, created_at: lesson.createdAt }]),
+  // Lessons
+  createLesson: async (lesson: Lesson) => {
+    return getSupabase().from('lessons').insert([{ 
+      id: lesson.id, 
+      title: lesson.title, 
+      subject_id: lesson.subjectId, 
+      type: lesson.type, 
+      description: lesson.description, 
+      ai_metadata: lesson.aiMetadata,
+      file_url: lesson.fileUrl, 
+      date_written: lesson.date,
+      start_time: lesson.startTime, 
+      end_time: lesson.endTime,     
+      keywords: lesson.keywords, 
+      is_published: lesson.isPublished, 
+      created_at: lesson.createdAt 
+    }]);
+  },
+  
   deleteLesson: async (id: string) => getSupabase().from('lessons').delete().eq('id', id),
+  
   uploadFile: async (file: File) => {
-    const fileName = `${crypto.randomUUID()}.${file.name.split('.').pop()}`;
-    const { error } = await getSupabase().storage.from('resources').upload(`uploads/${fileName}`, file);
+    const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const fileName = `${crypto.randomUUID()}_${cleanName}`;
+    // Using 'lessons' bucket for lessons specifically
+    const { error } = await getSupabase().storage.from('lessons').upload(fileName, file);
     if (error) throw error;
-    return getSupabase().storage.from('resources').getPublicUrl(`uploads/${fileName}`).data.publicUrl;
+    return getSupabase().storage.from('lessons').getPublicUrl(fileName).data.publicUrl;
   },
 
+  // Logs
+  createAiLog: async (userId: string, query: string) => {
+    await getSupabase().from('ai_logs').insert([{ user_id: userId, query: query }]);
+  },
+
+  fetchAiLogs: async () => {
+    const { data, error } = await getSupabase().from('ai_logs').select(`
+      id, query, created_at, status, user_id,
+      users ( name )
+    `).order('created_at', { ascending: false });
+    
+    if (error) return [];
+    
+    return data.map((log: any) => ({
+      id: log.id,
+      userId: log.user_id,
+      userName: log.users?.name || 'Unknown',
+      query: log.query,
+      createdAt: log.created_at,
+      status: log.status
+    }));
+  },
+
+  resolveLog: async (id: string) => {
+    await getSupabase().from('ai_logs').update({ status: 'resolved' }).eq('id', id);
+  },
+
+  // Chat
   fetchMessages: async (limit = 50) => {
     const { data, error } = await getSupabase().from('messages').select('*').order('created_at', { ascending: false }).limit(limit);
     if (error) throw error;
@@ -127,7 +167,8 @@ export const supabaseService = {
 
   uploadChatMedia: async (file: Blob | File, bucket = 'chat-attachments') => {
     const isFile = file instanceof File;
-    const fileName = `${crypto.randomUUID()}.${isFile ? (file as File).name.split('.').pop() : 'webm'}`;
+    const cleanName = isFile ? (file as File).name.replace(/[^a-zA-Z0-9.-]/g, '_') : 'audio.webm';
+    const fileName = `${crypto.randomUUID()}_${cleanName}`;
     const { error } = await getSupabase().storage.from(bucket).upload(fileName, file, { upsert: false, contentType: isFile ? file.type : 'audio/webm' });
     if (error) throw error;
     return getSupabase().storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
@@ -137,3 +178,5 @@ export const supabaseService = {
     await getSupabase().from('messages').update({ reactions: reactions }).eq('id', messageId);
   }
 };
+
+
