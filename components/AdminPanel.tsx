@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { AcademicItem, Subject, AppState, Lesson, AiLog, LessonAttachment } from '../types';
 import { useAuth } from '../AuthContext';
 import { supabaseService } from '../services/supabaseService';
-import { Plus, Edit2, X, UploadCloud, Save, CheckCircle, RefreshCw, Book, Calendar, Brain, Trash2, File as FileIcon } from 'lucide-react';
+import { Plus, Edit2, X, UploadCloud, Save, CheckCircle, RefreshCw, Book, Calendar, Brain, Trash2, File as FileIcon, AlertCircle } from 'lucide-react';
 
 interface Props {
   items: AcademicItem[];
@@ -36,6 +36,7 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
   });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploadingLesson, setIsUploadingLesson] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Logs
   const [logs, setLogs] = useState<AiLog[]>([]);
@@ -98,6 +99,7 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
   const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setSelectedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+      setUploadError(null);
     }
   };
 
@@ -115,6 +117,7 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
   const handleLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUploadingLesson(true);
+    setUploadError(null);
     try {
       const newAttachments: LessonAttachment[] = [];
       for (const file of selectedFiles) {
@@ -122,8 +125,8 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
           const url = await supabaseService.uploadFile(file);
           const type = file.type.startsWith('image') ? 'image' : file.type.startsWith('video') ? 'video' : 'file';
           newAttachments.push({ name: file.name, url, type });
-        } catch (uploadErr) {
-          alert(`Failed to upload ${file.name}. Ensure you ran the SQL policies.`);
+        } catch (uploadErr: any) {
+          setUploadError(`Failed to upload "${file.name}": ${uploadErr.message}`);
           setIsUploadingLesson(false);
           return;
         }
@@ -156,7 +159,7 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
       alert(t('upload_success'));
       window.location.reload(); 
     } catch (err: any) { 
-        alert("Action Failed: " + err.message); 
+        setUploadError("Action Failed: " + err.message); 
     } finally { setIsUploadingLesson(false); }
   };
 
@@ -201,13 +204,24 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
         <div className="space-y-6">
           <div className="flex justify-between items-center bg-emerald-50 p-6 rounded-[2.5rem]">
              <h3 className="font-black text-emerald-800 text-lg">Class Library Management</h3>
-             <button onClick={() => { setIsAddingLesson(!isAddingLesson); setEditingLessonId(null); setLessonFormData({ title: '', subjectId: subjects[0]?.id || '', type: 'lesson', description: '', aiMetadata: '', keywords: [], isPublished: true, attachments: [], date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '10:00' }); setSelectedFiles([]); }} className={`px-6 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 ${isAddingLesson ? 'bg-white text-slate-500' : 'bg-emerald-600 text-white'}`}>{isAddingLesson ? 'Close Form' : 'New Lesson Entry'}</button>
+             <button onClick={() => { setIsAddingLesson(!isAddingLesson); setEditingLessonId(null); setLessonFormData({ title: '', subjectId: subjects[0]?.id || '', type: 'lesson', description: '', aiMetadata: '', keywords: [], isPublished: true, attachments: [], date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '10:00' }); setSelectedFiles([]); setUploadError(null); }} className={`px-6 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 ${isAddingLesson ? 'bg-white text-slate-500' : 'bg-emerald-600 text-white'}`}>{isAddingLesson ? 'Close Form' : 'New Lesson Entry'}</button>
           </div>
           {isAddingLesson && (
             <form onSubmit={handleLessonSubmit} className="bg-white p-6 rounded-[3rem] border border-slate-100 shadow-xl space-y-8">
                <div className="flex justify-between items-center border-b pb-4">
                   <h4 className="text-xl font-black text-slate-900">{editingLessonId ? 'Modify Existing Lesson' : 'Add New Resource'}</h4>
                </div>
+
+               {uploadError && (
+                 <div className="p-4 bg-rose-50 border-2 border-rose-100 rounded-2xl flex items-start gap-3">
+                   <AlertCircle className="text-rose-600 shrink-0" size={20} />
+                   <div className="space-y-1">
+                     <p className="text-rose-900 font-black text-xs uppercase tracking-tight">Upload Failed</p>
+                     <p className="text-rose-700 text-xs font-bold leading-relaxed">{uploadError}</p>
+                     <p className="text-rose-500 text-[9px] font-black uppercase mt-2">Check your Supabase Storage RLS policies for the 'lessons' bucket.</p>
+                   </div>
+                 </div>
+               )}
 
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase">Lesson Title</label><input required className="w-full bg-slate-50 border rounded-xl px-4 py-3 font-bold text-sm" value={lessonFormData.title} onChange={e => setLessonFormData({...lessonFormData, title: e.target.value})} /></div>
