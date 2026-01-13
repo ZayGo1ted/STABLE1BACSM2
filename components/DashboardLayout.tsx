@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { 
@@ -21,7 +20,6 @@ const DashboardLayout: React.FC<Props> = ({ children, currentView, setView }) =>
     { id: 'overview', label: t('overview'), icon: <LayoutDashboard size={16} /> },
     { id: 'chat', label: t('chat'), icon: <MessageCircle size={16} /> },
     { id: 'calendar', label: t('calendar'), icon: <Calendar size={16} /> },
-    { id: 'timetable', label: t('timetable'), icon: <Clock size={16} /> },
     { id: 'subjects', label: t('subjects'), icon: <BookOpen size={16} /> },
     { id: 'lessons', label: 'Lessons', icon: <Library size={16} /> },
     { id: 'classlist', label: t('classlist'), icon: <Users size={16} /> },
@@ -38,7 +36,7 @@ const DashboardLayout: React.FC<Props> = ({ children, currentView, setView }) =>
     navItems.find(i => i.id === 'overview')!,
     navItems.find(i => i.id === 'chat')!,
     navItems.find(i => i.id === 'lessons')!,
-    navItems.find(i => i.id === 'timetable')!,
+    navItems.find(i => i.id === 'calendar')!,
     navItems.find(i => i.id === 'subjects')!,
   ];
 
@@ -181,3 +179,4 @@ const DashboardLayout: React.FC<Props> = ({ children, currentView, setView }) =>
 };
 
 export default DashboardLayout;
+
