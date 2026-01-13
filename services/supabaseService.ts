@@ -108,7 +108,11 @@ export const supabaseService = {
 
   createAiLog: async (userId: string, query: string) => {
     if (!userId) return;
-    return getSupabase().from('ai_logs').insert([{ user_id: userId, query: query, status: 'unresolved' }]);
+    try {
+      return await getSupabase().from('ai_logs').insert([{ user_id: userId, query: query, status: 'unresolved' }]);
+    } catch (e) {
+      console.error("Failed to log AI query", e);
+    }
   },
 
   fetchAiLogs: async () => {
