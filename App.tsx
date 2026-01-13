@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User, UserRole, AppState, AcademicItem, Language } from './types';
 import { supabaseService, getSupabase } from './services/supabaseService';
@@ -14,7 +13,6 @@ import LessonsView from './components/LessonsView';
 import ClassList from './components/ClassList';
 import AdminPanel from './components/AdminPanel';
 import DevTools from './components/DevTools';
-import Timetable from './components/Timetable';
 import Credits from './components/Credits';
 import ChatRoom from './components/ChatRoom';
 import { CloudOff, AlertTriangle, WifiOff } from 'lucide-react';
@@ -63,9 +61,9 @@ const App: React.FC = () => {
       const newState = {
         users: cloudData.users,
         items: cloudData.items,
-        timetable: cloudData.timetable,
         lessons: cloudData.lessons,
         subjects: INITIAL_SUBJECTS,
+        timetable: appState.timetable || [],
         language: appState.language
       };
 
@@ -207,9 +205,6 @@ const App: React.FC = () => {
       storageService.saveState(next);
       return next;
     });
-    if (!isBrowserOffline && updates.timetable) {
-      try { await supabaseService.updateTimetable(updates.timetable); } catch (e) {}
-    }
   };
 
   const authValue: AuthContextType = { 
@@ -255,7 +250,6 @@ const App: React.FC = () => {
                 case 'overview': return <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={(id) => { setSelectedSubjectId(id); setCurrentView('subjects'); }} />;
                 case 'chat': return <ChatRoom />;
                 case 'calendar': return <CalendarView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} onEditRequest={(item) => { setPendingEditItem(item); setCurrentView('admin'); }} />;
-                case 'timetable': return <Timetable entries={appState.timetable} subjects={appState.subjects} onUpdate={updateAppState} />;
                 case 'subjects': return <SubjectsView items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialSubjectId={selectedSubjectId} clearInitialSubject={() => setSelectedSubjectId(null)} />;
                 case 'lessons': return <LessonsView state={appState} />;
                 case 'classlist': return <ClassList users={appState.users} onUpdate={updateAppState} />;
