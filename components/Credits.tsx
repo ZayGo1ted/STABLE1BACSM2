@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Github, Twitter, Mail, Heart, Code, Users, ShieldCheck, Sparkles } from 'lucide-react';
 
@@ -67,7 +66,7 @@ const Credits: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap justify-center gap-4">
-          <a href="#" className="bg-white/5 hover:bg-white/10 text-white px-8 py-5 rounded-[2.5rem] border border-white/10 transition-all flex items-center gap-3 font-black text-sm group">
+          <a href="https://github.com/ZayGo1ted/1bacsm2" target="_blank" rel="noopener noreferrer" className="bg-white/5 hover:bg-white/10 text-white px-8 py-5 rounded-[2.5rem] border border-white/10 transition-all flex items-center gap-3 font-black text-sm group">
             <Github size={22} className="group-hover:rotate-12 transition-transform" /> GitHub
           </a>
           <a href="#" className="bg-white/5 hover:bg-white/10 text-white px-8 py-5 rounded-[2.5rem] border border-white/10 transition-all flex items-center gap-3 font-black text-sm group">
