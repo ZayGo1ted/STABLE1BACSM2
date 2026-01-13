@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../AuthContext';
 import { supabaseService, getSupabase } from '../services/supabaseService';
@@ -8,28 +9,41 @@ import {
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bell, BellOff, Sparkles, Bot, Bug, Reply,
-  ChevronDown, Copy, MoreVertical, ArrowDown, Eraser
+  ChevronDown, Copy, MoreVertical, ArrowDown, Eraser, AlertTriangle
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
-const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉'];
 const AI_PREFIX = ":::AI_RESPONSE:::";
 
-const formatDateLabel = (dateStr: string) => {
-  const date = new Date(dateStr);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-};
+const formatMessageContent = (text: string) => {
+  // 1. Handle Mentions (@Name)
+  // 2. Handle Bold (**text**)
+  // 3. Handle Markdown Links ([Title](url))
+  // 4. Handle raw URLs
 
-const renderContentWithMentions = (text: string) => {
-  const parts = text.split(/(@\S+)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('@') && part.length > 1) {
-      return <span key={i} className="font-bold text-indigo-600 bg-indigo-50 px-1 rounded">{part}</span>;
-    }
-    return part;
-  });
+  // Split by newlines first to preserve structure
+  return text.split('\n').map((line, lineIdx) => (
+    <div key={lineIdx} className="min-h-[1.2em]">
+      {line.split(/(\*\*.*?\*\*|\[.*?\]\(.*?\)|@\S+|https?:\/\/\S+)/g).map((part, partIdx) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={partIdx} className="font-black text-slate-900">{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith('@')) {
+          return <span key={partIdx} className="font-bold text-indigo-600 bg-indigo-50 px-1 rounded mx-0.5">{part}</span>;
+        }
+        if (part.match(/^\[.*?\]\(.*?\)$/)) {
+            const match = part.match(/^\[(.*?)\]\((.*?)\)$/);
+            if (match) {
+                return <a key={partIdx} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-bold hover:text-indigo-800 break-all">{match[1]}</a>;
+            }
+        }
+        if (part.match(/^https?:\/\//)) {
+             return <a key={partIdx} href={part} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline truncate block">{part}</a>;
+        }
+        return <span key={partIdx}>{part}</span>;
+      })}
+    </div>
+  ));
 };
 
 const ChatRoom: React.FC = () => {
@@ -136,6 +150,16 @@ const ChatRoom: React.FC = () => {
     }
   };
 
+  const handleReport = async (msg: ChatMessage) => {
+    if (!user) return;
+    const confirmed = confirm("Report this message as a bug/issue to the developers?");
+    if (confirmed) {
+        const reportContent = `[REPORTED by ${user.name}] Content: ${msg.content}`;
+        await supabaseService.createAiLog(user.id, reportContent);
+        alert("Report submitted. Admins will review it.");
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#f0f2f5] relative">
       {/* Header */}
@@ -174,7 +198,7 @@ const ChatRoom: React.FC = () => {
           const isSequence = prevMsg && prevMsg.userId === msg.userId && !isProxyAI && !(prevMsg.content.startsWith(AI_PREFIX));
 
           return (
-            <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} ${isSequence ? 'mt-1' : 'mt-4'} animate-in slide-in-from-bottom-2`}>
+            <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} ${isSequence ? 'mt-1' : 'mt-4'} animate-in slide-in-from-bottom-2 group`}>
                {/* Avatar */}
                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-sm transition-all ${!isSequence ? (isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400') : 'opacity-0'}`}>
                   {!isSequence && (isBot ? <Bot size={16} /> : userInfo.name.charAt(0))}
@@ -192,7 +216,9 @@ const ChatRoom: React.FC = () => {
                         : 'bg-white text-slate-800 rounded-2xl rounded-tl-sm'
                     }
                   `}>
-                    <p className="whitespace-pre-wrap break-words">{renderContentWithMentions(cleanContent)}</p>
+                    <div className="whitespace-pre-wrap break-words leading-relaxed">
+                        {formatMessageContent(cleanContent)}
+                    </div>
                     
                     {msg.mediaUrl && (
                         <div className="mt-2">
@@ -206,10 +232,14 @@ const ChatRoom: React.FC = () => {
                         </div>
                     )}
                     
-                    {/* Time & Delete */}
-                    <div className="flex items-center justify-end gap-2 mt-1 opacity-70">
+                    {/* Time & Actions */}
+                    <div className="flex items-center justify-end gap-3 mt-1 opacity-70">
                         <span className="text-[9px] font-bold uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        {canDelete && <button onClick={() => handleDelete(msg.id)}><Trash2 size={10} /></button>}
+                        
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleReport(msg)} title="Report Bug/Issue" className="hover:text-amber-400"><AlertTriangle size={10} /></button>
+                            {canDelete && <button onClick={() => handleDelete(msg.id)}><Trash2 size={10} /></button>}
+                        </div>
                     </div>
                   </div>
                </div>
