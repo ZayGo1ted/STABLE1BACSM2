@@ -60,7 +60,7 @@ export const supabaseService = {
       users: (users || []).map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role as UserRole, studentNumber: u.student_number, createdAt: u.created_at })),
       items: mappedItems,
       lessons: mappedLessons,
-      timetable: (timetable || []).map((e: any) => ({ id: e.id, day: e.day, startHour: e.start_hour, endHour: e.end_hour, subject_id: e.subject_id, color: e.color, room: e.room }))
+      timetable: (timetable || []).map((e: any) => ({ id: e.id, day: e.day, startHour: e.start_hour, endHour: e.end_hour, subjectId: e.subject_id, color: e.color, room: e.room }))
     };
   },
 
@@ -123,7 +123,6 @@ export const supabaseService = {
   deleteLesson: async (id: string) => getSupabase().from('lessons').delete().eq('id', id),
   
   // Chat Messages
-  // Added fetchMessages to fix error in ChatRoom.tsx
   fetchMessages: async (limit: number = 100): Promise<ChatMessage[]> => {
     const client = getSupabase();
     const { data, error } = await client
@@ -148,7 +147,6 @@ export const supabaseService = {
     }));
   },
 
-  // Added sendMessage to fix error in ChatRoom.tsx
   sendMessage: async (msg: { userId: string; content: string; type?: string; mediaUrl?: string; fileName?: string }) => {
     const client = getSupabase();
     const { error } = await client.from('messages').insert([{
@@ -161,14 +159,12 @@ export const supabaseService = {
     if (error) throw error;
   },
 
-  // Added deleteMessage to fix error in ChatRoom.tsx
   deleteMessage: async (id: string) => {
     const client = getSupabase();
     const { error } = await client.from('messages').delete().eq('id', id);
     if (error) throw error;
   },
 
-  // Added clearChat to fix error in ChatRoom.tsx
   clearChat: async () => {
     const client = getSupabase();
     const { error } = await client.from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -176,21 +172,24 @@ export const supabaseService = {
   },
 
   uploadFile: async (file: File) => {
-    // Sanitize filename to avoid weird character issues in Supabase
+    const client = getSupabase();
+    // Sanitize filename: remove non-ascii, spaces to underscores
     const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const fileName = `${Date.now()}_${cleanName}`;
     
-    const { data, error } = await getSupabase().storage.from('lessons').upload(fileName, file, {
-      cacheControl: '3600',
-      upsert: false
-    });
+    const { data, error } = await client.storage
+      .from('lessons')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
     
     if (error) {
       console.error("Supabase Storage Error:", error);
-      throw error;
+      throw new Error(`Storage Error: ${error.message}. Ensure RLS policies allow 'anon' role to insert into 'lessons' bucket.`);
     }
     
-    const { data: urlData } = getSupabase().storage.from('lessons').getPublicUrl(fileName);
+    const { data: urlData } = client.storage.from('lessons').getPublicUrl(fileName);
     return urlData.publicUrl;
   },
 
