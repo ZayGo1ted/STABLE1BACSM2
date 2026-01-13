@@ -8,37 +8,36 @@ import { BookOpen, Calendar, Clock, Search, FileText, Image as ImageIcon, Filter
 
 interface Props {
   state: AppState;
+  onUpdate: (updates: Partial<AppState>) => void;
 }
 
-const LessonsView: React.FC<Props> = ({ state }) => {
+const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
   const { t, lang, isAdmin, isDev } = useAuth();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Helper for admin actions
   const handleDelete = async (id: string) => {
-    if (confirm("Delete this lesson?")) {
-        await supabaseService.deleteLesson(id);
-        window.location.reload();
+    if (confirm("Are you sure you want to delete this lesson permanently?")) {
+        try {
+            const { error } = await supabaseService.deleteLesson(id);
+            if (error) throw error;
+
+            // Optimistic update
+            const newLessons = state.lessons.filter(l => l.id !== id);
+            onUpdate({ lessons: newLessons });
+            setActiveMenu(null);
+        } catch (e: any) {
+            alert("Error deleting lesson: " + e.message);
+        }
     }
   };
 
   const handleEdit = (lesson: Lesson) => {
-    // We need to trigger the parent to switch to Admin view with this lesson
-    // Since we don't have a direct prop callback for navigation here in this snippet,
-    // we will store it in local storage or dispatch an event, OR rely on the parent wrapper.
-    // However, the cleanest way without changing App.tsx props completely is to use a global event or context, 
-    // OR we can simple alert the user to use the Admin Panel for now, BUT the user specifically asked for a menu here.
-    // Solution: We'll dispatch a custom event that App.tsx or CalendarView listens to? No, that's messy.
-    // We will assume `window.location.reload` isn't enough for edit state.
-    // We will cheat slightly: We'll set a sessionStorage flag and reload to 'admin' view?
-    // Better: Add a prop for `onEdit` in future, but for now let's just use the Admin Panel logic if we are in admin view.
-    // Actually, I'll assume the App passes a `setPendingEditLesson` if I could change App.tsx, but I can't easily change App.tsx state flow without full file.
-    // WORKAROUND: We will emit a custom event "editLesson"
     const event = new CustomEvent('editLesson', { detail: lesson });
     window.dispatchEvent(event);
+    setActiveMenu(null);
   };
 
   const filteredLessons = useMemo(() => {
