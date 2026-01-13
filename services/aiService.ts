@@ -17,21 +17,25 @@ export const aiService = {
    * Generates a response from @Zay using the provided context.
    */
   askZay: async (userQuery: string, requestingUser: User | null): Promise<AiResponse> => {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      // FETCH FRESH STATE directly from DB to ensure AI "sees" everything
-      const freshState = await supabaseService.fetchFullState();
-      const lessons = freshState.lessons;
-      const subjects = freshState.subjects;
+    const apiKey = process.env.API_KEY;
+    
+    if (!apiKey) {
+      console.error("Zay Error: API_KEY is missing from environment. Check Vercel settings.");
+      return { text: "⚠️ Connectivity issue: API Key missing in deployment.", type: 'text' };
+    }
 
-      // Improved Context Builder: 
-      // We send more lessons to the AI and let Gemini handle the semantic matching
-      // instead of a strict string.includes() filter in JavaScript.
-      const queryLower = userQuery.toLowerCase();
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      
+      // Fetch fresh library data
+      const freshState = await supabaseService.fetchFullState();
+      const lessons = freshState.lessons || [];
+      const subjects = freshState.subjects || [];
+
+      // Improved Context Builder: Let Gemini handle matching
       const lessonContext = lessons
         .filter(l => l.isPublished)
-        .slice(0, 15) // Give AI a broader view of the last 15 lessons
+        .slice(0, 20) // Provide a healthy slice of recent lessons
         .map(l => {
           const subject = subjects.find(s => s.id === l.subjectId)?.name.en || 'General';
           const fileLinks = (l.attachments || []).map(a => `   - ${a.name}: ${a.url}`).join('\n');
@@ -41,7 +45,6 @@ export const aiService = {
             Subject: ${subject}
             Description: ${l.description}
             Keywords: ${l.keywords.join(', ')}
-            AI_Meta: ${l.aiMetadata}
             Resources:
             ${fileLinks || "No attachments"}
           `;
@@ -49,19 +52,16 @@ export const aiService = {
 
       const systemInstruction = `
         You are @Zay, the smart hub assistant for the "1BacSM" class.
-        You have access to a library of lessons. Your job is to find the right resource for the student.
+        You assist students in finding lessons and resources from the CLASS LIBRARY.
 
         **CLASS LIBRARY:**
         ${lessonContext || "THE_LIBRARY_IS_CURRENTLY_EMPTY"}
 
         **STRICT PROTOCOL:**
-        1. If a student asks for a specific lesson, file, or topic:
-           - Look for it in the CLASS LIBRARY above.
-           - If you find a match (even a partial one), provide a short helpful response and end it with: 
-             "MEDIA_URL::[THE_URL_OF_THE_FIRST_ATTACHMENT]"
-           - If NO RELEVANT LESSON is found in the provided list, respond with ONLY: "NOT_FOUND_IN_DB".
-        2. Be polite, concise, and professional.
-        3. Use Markdown for formatting.
+        1. When asked for a lesson or topic, find the closest match in the library.
+        2. If matched, answer helpfully and ALWAYS end with: "MEDIA_URL::[THE_URL_OF_THE_FIRST_ATTACHMENT]".
+        3. If NO RELEVANT LESSON exists in the list above, you MUST say exactly: "NOT_FOUND_IN_DB".
+        4. Be professional and speak in the language of the query.
       `;
 
       const response = await ai.models.generateContent({
@@ -72,13 +72,12 @@ export const aiService = {
 
       const text = (response.text || "").trim();
 
-      // Trigger logging if not found
-      if (text.includes("NOT_FOUND_IN_DB") || text.includes("ERROR_NO_MATCH")) {
+      if (text.includes("NOT_FOUND_IN_DB")) {
         if (requestingUser) {
            await supabaseService.createAiLog(requestingUser.id, userQuery);
         }
         return { 
-          text: "I couldn't find that specific lesson in my current records. I've logged this as a missing resource for the Dev team! 📢", 
+          text: "I couldn't find that specific lesson in our current library. I've notified the team to upload it! 📢", 
           type: 'text' 
         };
       }
@@ -96,8 +95,8 @@ export const aiService = {
       return { text: finalText, mediaUrl, type };
 
     } catch (error: any) {
-      console.error("AI Service Error:", error);
-      return { text: "😵 Connection to Zay lost. Please try again.", type: 'text' };
+      console.error("Zay System Error:", error);
+      return { text: "😵 Connection to Zay interrupted. Please try again later.", type: 'text' };
     }
   }
 };
