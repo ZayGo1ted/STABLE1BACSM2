@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { User, UserRole, AppState, AcademicItem, Language } from './types';
+import { User, UserRole, AppState, AcademicItem, Language, Lesson } from './types';
 import { supabaseService, getSupabase } from './services/supabaseService';
 import { storageService } from './services/storageService'; 
 import { TRANSLATIONS, INITIAL_SUBJECTS } from './constants';
@@ -32,11 +33,25 @@ const App: React.FC = () => {
   const [syncWarning, setSyncWarning] = useState<boolean>(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [isBrowserOffline, setIsBrowserOffline] = useState(!navigator.onLine);
+  
+  // Edit States
   const [pendingEditItem, setPendingEditItem] = useState<AcademicItem | null>(null);
+  const [pendingEditLesson, setPendingEditLesson] = useState<Lesson | null>(null);
+  
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
 
   const currentUserRef = useRef<User | null>(null);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
+  // Event Listener for Edit Requests from deeply nested components
+  useEffect(() => {
+    const handleEditLesson = (e: any) => {
+        setPendingEditLesson(e.detail);
+        setCurrentView('admin');
+    };
+    window.addEventListener('editLesson', handleEditLesson);
+    return () => window.removeEventListener('editLesson', handleEditLesson);
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('hub_user_session');
@@ -63,7 +78,7 @@ const App: React.FC = () => {
         items: cloudData.items,
         lessons: cloudData.lessons,
         subjects: INITIAL_SUBJECTS,
-        timetable: appState.timetable || [],
+        timetable: cloudData.timetable || [],
         language: appState.language
       };
 
@@ -254,7 +269,7 @@ const App: React.FC = () => {
                 case 'lessons': return <LessonsView state={appState} />;
                 case 'classlist': return <ClassList users={appState.users} onUpdate={updateAppState} />;
                 case 'credits': return <Credits />;
-                case 'admin': return isAdmin ? <AdminPanel items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialEditItem={pendingEditItem} onEditHandled={() => setPendingEditItem(null)} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
+                case 'admin': return isAdmin ? <AdminPanel items={appState.items} subjects={appState.subjects} onUpdate={updateAppState} initialEditItem={pendingEditItem} initialEditLesson={pendingEditLesson} onEditHandled={() => { setPendingEditItem(null); setPendingEditLesson(null); }} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
                 case 'dev': return isDev ? <DevTools state={appState} onUpdate={updateAppState} /> : <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
                 default: return <Overview items={appState.items} subjects={appState.subjects} onSubjectClick={() => {}} />;
               }
