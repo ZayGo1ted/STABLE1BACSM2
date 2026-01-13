@@ -1,6 +1,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AppState, User, AcademicItem, Resource, UserRole, ChatMessage, Lesson, AiLog } from '../types';
+import { INITIAL_SUBJECTS } from '../constants';
 
 const SUPABASE_URL = 'https://lbfdweyzaqmlkcfgixmn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxiZmR3ZXl6YXFtbGtjZmdpeG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY2ODE1NjAsImV4cCI6MjA4MjI1NzU2MH0.wD_mWSrD1ayCeEzVOcLPgn1ihxXemwzHYXSB_3IsjlQ';
@@ -59,7 +60,7 @@ export const supabaseService = {
       })),
       lessons: mappedLessons,
       timetable: (timetable || []).map((e: any) => ({ id: e.id, day: e.day, startHour: e.start_hour, endHour: e.end_hour, subjectId: e.subject_id, color: e.color, room: e.room })),
-      subjects: [] // Note: subjects are loaded from constants but this keeps the type happy
+      subjects: INITIAL_SUBJECTS
     };
   },
 
@@ -106,9 +107,13 @@ export const supabaseService = {
   },
 
   createAiLog: async (userId: string, query: string) => {
-    // Explicitly check for user_id to avoid RLS violation if somehow null
     if (!userId) return;
-    return getSupabase().from('ai_logs').insert([{ user_id: userId, query: query, status: 'unresolved' }]);
+    try {
+        const { error } = await getSupabase().from('ai_logs').insert([{ user_id: userId, query: query, status: 'unresolved' }]);
+        if (error) throw error;
+    } catch (e) {
+        console.error("Critical: AI Log creation failed", e);
+    }
   },
 
   fetchAiLogs: async () => {
