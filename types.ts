@@ -1,3 +1,4 @@
+
 export enum UserRole {
   DEV = 'DEV',
   ADMIN = 'ADMIN',
@@ -23,17 +24,25 @@ export interface Resource {
   url: string;
 }
 
+export interface LessonAttachment {
+  name: string;
+  url: string;
+  type: 'file' | 'image' | 'video';
+  size?: number;
+}
+
 export interface Lesson {
   id: string;
   title: string;
   subjectId: string;
-  type: 'lesson' | 'summary' | 'exercise' | 'exam_prep'; // Changed 'course' to 'lesson'
-  description: string; // Visible to students
-  aiMetadata: string; // Hidden, for AI context only
-  fileUrl: string;
-  date: string;       // Date written (YYYY-MM-DD)
-  startTime: string;  // e.g. "08:30"
-  endTime: string;    // e.g. "10:30"
+  type: 'lesson' | 'summary' | 'exercise' | 'exam_prep';
+  description: string; // Visible to students (can contain parts info)
+  aiMetadata: string; // Hidden context
+  fileUrl?: string; // Legacy main file
+  attachments: LessonAttachment[]; // Multiple files
+  date: string;       
+  startTime: string;  
+  endTime: string;    
   keywords: string[];
   isPublished: boolean;
   createdAt: string;
@@ -79,7 +88,7 @@ export interface ChatMessage {
 export interface AiLog {
   id: string;
   userId: string;
-  userName?: string; // Hydrated on client
+  userName?: string; 
   query: string;
   createdAt: string;
   status: 'unresolved' | 'resolved';
@@ -103,4 +112,3 @@ export interface AppState {
   timetable: TimetableEntry[];
   language: Language;
 }
-
