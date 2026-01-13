@@ -1,9 +1,11 @@
-
 import React from 'react';
 import { BookOpen, Calculator, Atom, Globe, Book, GraduationCap, Heart, Languages, Brain, Activity, Scroll } from 'lucide-react';
 import { UserRole, Subject, User, AcademicItem, Language } from './types';
 
 export const APP_NAME = "1Bacsm 2";
+
+// Valid UUID for the Bot User to satisfy database constraints
+export const ZAY_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 export const INITIAL_SUBJECTS: Subject[] = [
   { 
@@ -100,7 +102,6 @@ export const TRANSLATIONS: Record<Language, any> = {
     calendar: "Exams & Events",
     subjects: "Curriculum",
     classlist: "Students",
-    timetable: "Class Schedule",
     management: "Control Center",
     dev: "Dev Tools",
     credits: "Credits",
@@ -116,6 +117,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     exam: "Exam",
     homework: "Homework",
     event: "Event",
+    task: "Task",
     due: "Deadline",
     add: "Create",
     save: "Save",
@@ -129,12 +131,6 @@ export const TRANSLATIONS: Record<Language, any> = {
     time: "Time",
     room: "Room",
     location: "Location",
-    monday: "Monday",
-    tuesday: "Tuesday",
-    wednesday: "Wednesday",
-    thursday: "Thursday",
-    friday: "Friday",
-    saturday: "Saturday",
     placeholder_title: "Enter title...",
     placeholder_notes: "Add description...",
     upload_res: "Attach Resources",
@@ -147,7 +143,15 @@ export const TRANSLATIONS: Record<Language, any> = {
     chat_placeholder: "Type a message...",
     recording: "Recording...",
     release_send: "Release to Send",
-    tap_record: "Tap mic to record"
+    tap_record: "Tap mic to record",
+    lesson_time: "Time Range",
+    from: "From",
+    to: "To",
+    date: "Date",
+    ai_metadata: "AI Metadata (Hidden)",
+    logs: "AI Logs",
+    upload_success: "File Uploaded Successfully",
+    upload_fail: "Upload Failed"
   },
   fr: {
     welcome: "Bienvenue",
@@ -155,7 +159,6 @@ export const TRANSLATIONS: Record<Language, any> = {
     calendar: "Calendrier",
     subjects: "Matières",
     classlist: "Étudiants",
-    timetable: "Emploi du Temps",
     management: "Gestion",
     dev: "Console Dev",
     credits: "Crédits",
@@ -171,6 +174,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     exam: "Examen",
     homework: "Devoir",
     event: "Événement",
+    task: "Tâche",
     due: "Échéance",
     add: "Ajouter",
     save: "Enregistrer",
@@ -184,12 +188,6 @@ export const TRANSLATIONS: Record<Language, any> = {
     time: "Heure",
     room: "Salle",
     location: "Lieu",
-    monday: "Lundi",
-    tuesday: "Mardi",
-    wednesday: "Mercredi",
-    thursday: "Jeudi",
-    friday: "Vendredi",
-    saturday: "Samedi",
     placeholder_title: "Titre...",
     placeholder_notes: "Description...",
     upload_res: "Ajouter Ressources",
@@ -202,7 +200,15 @@ export const TRANSLATIONS: Record<Language, any> = {
     chat_placeholder: "Écrivez un message...",
     recording: "Enregistrement...",
     release_send: "Relâcher pour envoyer",
-    tap_record: "Appuyez pour enregistrer"
+    tap_record: "Appuyez pour enregistrer",
+    lesson_time: "Plage Horaire",
+    from: "De",
+    to: "À",
+    date: "Date",
+    ai_metadata: "Métadonnées IA (Caché)",
+    logs: "Journaux IA",
+    upload_success: "Fichier téléchargé",
+    upload_fail: "Échec du téléchargement"
   },
   ar: {
     welcome: "مرحباً",
@@ -210,7 +216,6 @@ export const TRANSLATIONS: Record<Language, any> = {
     calendar: "الامتحانات",
     subjects: "المواد",
     classlist: "الطلاب",
-    timetable: "استعمال الزمن",
     management: "التسيير",
     dev: "المطور",
     credits: "الاعتمادات",
@@ -226,6 +231,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     exam: "امتحان",
     homework: "واجب",
     event: "حدث",
+    task: "مهمة",
     due: "الموعد",
     add: "إضافة",
     save: "حفظ",
@@ -239,12 +245,6 @@ export const TRANSLATIONS: Record<Language, any> = {
     time: "الوقت",
     room: "القاعة",
     location: "المكان",
-    monday: "الاثنين",
-    tuesday: "الثلاثاء",
-    wednesday: "الأربعاء",
-    thursday: "الخميس",
-    friday: "الجمعة",
-    saturday: "السبت",
     placeholder_title: "العنوان...",
     placeholder_notes: "ملاحظات إضافية...",
     upload_res: "إرفاق موارد",
@@ -257,6 +257,15 @@ export const TRANSLATIONS: Record<Language, any> = {
     chat_placeholder: "اكتب رسالة...",
     recording: "جاري التسجيل...",
     release_send: "اترك للإرسال",
-    tap_record: "اضغط للتسجيل"
+    tap_record: "اضغط للتسجيل",
+    lesson_time: "التوقيت",
+    from: "من",
+    to: "إلى",
+    date: "التاريخ",
+    ai_metadata: "بيانات الذكاء الاصطناعي",
+    logs: "سجلات الذكاء الاصطناعي",
+    upload_success: "تم الرفع بنجاح",
+    upload_fail: "فشل الرفع"
   }
 };
+
