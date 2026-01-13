@@ -83,7 +83,14 @@ export const supabaseService = {
     attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished
   }).eq('id', lesson.id),
   
-  deleteLesson: async (id: string) => getSupabase().from('lessons').delete().eq('id', id),
+  deleteLesson: async (id: string) => {
+    // We request a count to ensure something was actually deleted
+    const { error, count } = await getSupabase().from('lessons').delete({ count: 'exact' }).eq('id', id);
+    if (error) return { error };
+    // If count is 0, it means RLS or ID mismatch prevented deletion
+    if (count === 0) return { error: { message: 'Database refused deletion. Check permissions.' } };
+    return { error: null };
+  },
   
   fetchMessages: async (limit: number = 100): Promise<ChatMessage[]> => {
     const { data, error } = await getSupabase().from('messages').select('*').order('created_at', { ascending: true }).limit(limit);
