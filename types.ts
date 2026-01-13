@@ -1,4 +1,3 @@
-
 export enum UserRole {
   DEV = 'DEV',
   ADMIN = 'ADMIN',
@@ -28,10 +27,13 @@ export interface Lesson {
   id: string;
   title: string;
   subjectId: string;
-  type: 'course' | 'summary' | 'exercise' | 'exam_prep';
-  description: string;
+  type: 'lesson' | 'summary' | 'exercise' | 'exam_prep'; // Changed 'course' to 'lesson'
+  description: string; // Visible to students
+  aiMetadata: string; // Hidden, for AI context only
   fileUrl: string;
-  estimatedTime: string; // e.g. "45 min"
+  date: string;       // Date written (YYYY-MM-DD)
+  startTime: string;  // e.g. "08:30"
+  endTime: string;    // e.g. "10:30"
   keywords: string[];
   isPublished: boolean;
   createdAt: string;
@@ -41,7 +43,7 @@ export interface AcademicItem {
   id: string;
   title: string;
   subjectId: string;
-  type: 'exam' | 'homework' | 'event';
+  type: 'exam' | 'homework' | 'event' | 'task';
   date: string;
   time?: string;
   location?: string;
@@ -55,16 +57,6 @@ export interface Subject {
   description: Record<Language, string>;
   color: string;
   coefficient: number;
-}
-
-export interface TimetableEntry {
-  id: string;
-  day: number; // 1-6 (Mon-Sat)
-  startHour: number; // 8-17
-  endHour: number;
-  subjectId: string;
-  color: string;
-  room?: string;
 }
 
 export interface Reaction {
@@ -81,14 +73,34 @@ export interface ChatMessage {
   fileName?: string;
   createdAt: string;
   reactions: Reaction[];
-  readBy: string[]; // Array of User IDs who have read the message
+  readBy: string[];
+}
+
+export interface AiLog {
+  id: string;
+  userId: string;
+  userName?: string; // Hydrated on client
+  query: string;
+  createdAt: string;
+  status: 'unresolved' | 'resolved';
+}
+
+export interface TimetableEntry {
+  id: string;
+  day: number;
+  startHour: number;
+  endHour: number;
+  subjectId: string;
+  color: string;
+  room: string;
 }
 
 export interface AppState {
   users: User[];
   subjects: Subject[];
   items: AcademicItem[];
-  timetable: TimetableEntry[];
   lessons: Lesson[];
+  timetable: TimetableEntry[];
   language: Language;
 }
+
