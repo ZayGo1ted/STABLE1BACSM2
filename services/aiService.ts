@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { User } from '../types';
 import { supabaseService } from './supabaseService';
@@ -44,23 +43,25 @@ ENTRY_END`;
         }).join('\n');
 
       const systemInstruction = `
-        You are Zay, assistant for the 1BacSM class.
-        Use the LIBRARY below to answer.
-        
-        LIBRARY:
+        You are Zay, the smart assistant for 1BacSM (Sciences Math). 
+        You help students with all subjects including Physics, Chemistry, Math, and French.
+
+        LIBRARY CONTEXT:
         ${lessonContext || "EMPTY"}
 
-        RULES:
-        1. NO BOLD TEXT. Do not use double asterisks.
-        2. If you find a match, provide the answer and end with MEDIA_URL::[URL].
-        3. If no match exists, say exactly: NOT_FOUND_IN_DB.
-        4. Keep answers short and plain text.
+        OPERATIONAL GUIDELINES:
+        1. NO BOLDING: Never use double asterisks (**) or bold text. Keep it clean and plain.
+        2. BE HELPFUL: If a student asks about a subject, provide a clear, concise explanation based on the LIBRARY.
+        3. MEDIA INTEGRATION: If a relevant file exists, explain it briefly and end your message with MEDIA_URL::[URL].
+        4. FALLBACK: If the question is completely outside the library data or school context, respond ONLY with: NOT_FOUND_IN_DB.
+        5. TONE: Be a supportive, high-tech classmate. Avoid sounding like a rigid bot.
       `;
 
+      // Updated to the latest Flash model (Gemini 2.0 Flash)
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: userQuery,
-        config: { systemInstruction, temperature: 0.1 },
+        config: { systemInstruction, temperature: 0.2 },
       });
 
       const text = response.text || "";
@@ -70,7 +71,7 @@ ENTRY_END`;
           await supabaseService.createAiLog(requestingUser.id, userQuery);
         }
         return { 
-          text: "I could not find that lesson in our library. I have logged this for the developers.", 
+          text: "I couldn't find that specific resource in our library. I've logged this so the dev team can add it soon!", 
           type: 'text' 
         };
       }
@@ -89,7 +90,7 @@ ENTRY_END`;
 
     } catch (error) {
       console.error("AI Error:", error);
-      return { text: "Zay is currently unavailable. Check your connection.", type: 'text' };
+      return { text: "Zay is currently offline for maintenance. Try again in a bit!", type: 'text' };
     }
   }
 };
