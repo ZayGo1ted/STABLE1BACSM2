@@ -29,7 +29,9 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
             onUpdate({ lessons: newLessons });
             setActiveMenu(null);
         } catch (e: any) {
-            alert("Error deleting lesson: " + e.message);
+            alert("Delete Failed: " + (e.message || "Unknown error"));
+            // Refresh state to ensure UI is in sync if delete failed
+            window.location.reload();
         }
     }
   };
