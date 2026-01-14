@@ -7,7 +7,7 @@ import {
   Plus, Edit2, X, UploadCloud, Save, CheckCircle, RefreshCw, 
   Book, Calendar, Brain, Trash2, AlertCircle, Search, 
   ArrowUp, ArrowDown, File as FileIcon, Image as ImageIcon, Video,
-  HardDrive
+  HardDrive, Layers
 } from 'lucide-react';
 import { SUBJECT_ICONS } from '../constants';
 
@@ -27,6 +27,7 @@ interface StagedAttachment {
   name: string;
   type: 'image' | 'video' | 'file';
   isExisting: boolean;
+  originalSize?: number; // New: track original size
 }
 
 const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditItem, initialEditLesson, onEditHandled }) => {
@@ -55,12 +56,26 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
   const [isUploadingLesson, setIsUploadingLesson] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
-  const [uploadTotalSize, setUploadTotalSize] = useState<number>(0);
+  
+  // Size Tracking
+  const [uploadOriginalSize, setUploadOriginalSize] = useState<number>(0);
+  const [uploadFinalSize, setUploadFinalSize] = useState<number>(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Logs State
   const [logs, setLogs] = useState<AiLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+
+  // cleanup URLs to prevent memory leaks causing lag
+  useEffect(() => {
+    return () => {
+      stagedAttachments.forEach(att => {
+        if (!att.isExisting && att.url.startsWith('blob:')) {
+          URL.revokeObjectURL(att.url);
+        }
+      });
+    };
+  }, [stagedAttachments]);
 
   useEffect(() => {
     if (initialEditItem) {
@@ -95,7 +110,8 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
     setStagedAttachments([]);
     setUploadError(null);
     setUploadProgress('');
-    setUploadTotalSize(0);
+    setUploadFinalSize(0);
+    setUploadOriginalSize(0);
     setIsLessonFormOpen(false);
   };
 
@@ -155,13 +171,23 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
             url: URL.createObjectURL(file), 
             name: file.name,
             type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file',
-            isExisting: false
+            isExisting: false,
+            originalSize: file.size
         } as StagedAttachment));
         setStagedAttachments(prev => [...prev, ...newFiles]);
+        
+        // Reset file input to allow selecting same file again
+        e.target.value = '';
     }
   };
 
-  const removeAttachment = (id: string) => setStagedAttachments(prev => prev.filter(a => a.id !== id));
+  const removeAttachment = (id: string) => {
+    const toRemove = stagedAttachments.find(a => a.id === id);
+    if (toRemove && !toRemove.isExisting && toRemove.url.startsWith('blob:')) {
+      URL.revokeObjectURL(toRemove.url); // Immediate cleanup
+    }
+    setStagedAttachments(prev => prev.filter(a => a.id !== id));
+  };
 
   const moveAttachment = (index: number, direction: 'up' | 'down') => {
     const newIndex = direction === 'up' ? index - 1 : index + 1;
@@ -176,12 +202,19 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
 
   const handleLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!lessonFormData.title) return;
+    if (!lessonFormData.title) {
+        alert("Please enter a title for the lesson.");
+        return;
+    }
     
     setIsUploadingLesson(true);
     setUploadError(null);
     setUploadProgress(t('upload_start') || 'Initializing...');
-    let accumulatedSize = 0;
+    setUploadFinalSize(0);
+    setUploadOriginalSize(0);
+    
+    let accumulatedFinalSize = 0;
+    let accumulatedOrigSize = 0;
 
     try {
         const finalAttachments: LessonAttachment[] = [];
@@ -194,18 +227,24 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
             if (item.isExisting) {
                 finalAttachments.push({ name: item.name, url: item.url, type: item.type });
             } else if (item.file) {
-                // Granular Progress Updates
+                accumulatedOrigSize += item.file.size;
+                setUploadOriginalSize(accumulatedOrigSize);
+
                 completed++;
                 const countStr = `(${completed}/${filesToUpload.length})`;
                 setUploadProgress(`Compressing ${countStr}: ${item.name}...`);
                 
-                // Pause to let UI render and GC run
+                // Allow UI to breathe
                 await new Promise(r => setTimeout(r, 50)); 
                 
                 const { url, size } = await supabaseService.uploadFile(item.file);
-                accumulatedSize += size;
-                setUploadTotalSize(accumulatedSize);
                 
+                accumulatedFinalSize += size;
+                setUploadFinalSize(accumulatedFinalSize);
+                
+                // Release local memory immediately
+                if (item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
+
                 setUploadProgress(`Uploaded ${countStr}: ${(size/1024).toFixed(0)}KB`);
                 finalAttachments.push({ name: item.name, url: url, type: item.type, size: size });
             }
@@ -235,13 +274,12 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
             await supabaseService.createLesson(lesson);
         }
 
-        // Force full refresh to ensure consistency
         setUploadProgress('Syncing...');
         const freshState = await supabaseService.fetchFullState();
         onUpdate({ lessons: freshState.lessons });
 
+        alert(`${t('upload_success')}! Total size: ${(accumulatedFinalSize/1024/1024).toFixed(2)}MB`);
         resetLessonForm();
-        alert(t('upload_success'));
         
     } catch (err: any) {
         console.error("Upload Error:", err);
@@ -249,7 +287,6 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
     } finally {
         setIsUploadingLesson(false);
         setUploadProgress('');
-        setUploadTotalSize(0);
     }
   };
 
@@ -471,9 +508,9 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
                                        <button type="button" onClick={() => moveAttachment(i, 'down')} disabled={i === stagedAttachments.length - 1} className="p-1 rounded bg-white hover:bg-slate-200 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowDown size={10} /></button>
                                    </div>
                                    
-                                   <div className="w-12 h-12 shrink-0 bg-white rounded-lg border border-slate-100 flex items-center justify-center overflow-hidden">
+                                   <div className="w-12 h-12 shrink-0 bg-white rounded-lg border border-slate-100 flex items-center justify-center overflow-hidden relative">
                                        {att.type === 'image' ? (
-                                           <img src={att.url} alt="preview" className="w-full h-full object-cover" />
+                                           <img src={att.url} alt="preview" className="w-full h-full object-cover" decoding="async" loading="lazy" />
                                        ) : att.type === 'video' ? (
                                            <Video size={20} className="text-slate-400"/>
                                        ) : (
@@ -488,6 +525,9 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
                                                {att.isExisting ? 'Saved' : 'New'}
                                            </span>
                                            <span className="text-[8px] uppercase font-bold text-slate-400">{att.type}</span>
+                                           {!att.isExisting && att.originalSize && (
+                                              <span className="text-[8px] font-bold text-slate-300">{(att.originalSize / 1024 / 1024).toFixed(1)}MB</span>
+                                           )}
                                        </div>
                                    </div>
 
@@ -518,11 +558,18 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
                                    </div>
                                    <div className="flex justify-between items-end">
                                         <p className="text-xs font-bold text-emerald-600/80">{uploadProgress}</p>
-                                        {uploadTotalSize > 0 && (
-                                            <p className="text-[10px] font-black text-emerald-600 flex items-center gap-1">
-                                                <HardDrive size={10} /> Total: {(uploadTotalSize / 1024 / 1024).toFixed(2)} MB
-                                            </p>
-                                        )}
+                                        <div className="flex flex-col items-end">
+                                            {uploadOriginalSize > 0 && (
+                                                <p className="text-[9px] font-bold text-slate-400 strike-through">
+                                                    Orig: {(uploadOriginalSize / 1024 / 1024).toFixed(2)} MB
+                                                </p>
+                                            )}
+                                            {uploadFinalSize > 0 && (
+                                                <p className="text-[10px] font-black text-emerald-600 flex items-center gap-1">
+                                                    <HardDrive size={10} /> Final: {(uploadFinalSize / 1024 / 1024).toFixed(2)} MB
+                                                </p>
+                                            )}
+                                        </div>
                                    </div>
                                </div>
                            )}
