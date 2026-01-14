@@ -16,39 +16,40 @@ import { ZAY_USER_ID } from '../constants';
 const AI_PREFIX = ":::AI_RESPONSE:::";
 
 /**
- * Advanced Message Formatter
- * Supports: Bold, Code Blocks, Inline Code, and Math Symbols
+ * Advanced Message Formatter for Academic Content
  */
 const formatMessageContent = (text: string) => {
-  // 1. Handle Code Blocks
+  // Handle Code Blocks first
   const codeBlockRegex = /```([\s\S]*?)```/g;
   const parts = text.split(codeBlockRegex);
   
   return parts.map((part, idx) => {
-    // Every odd index is a code block
     if (idx % 2 === 1) {
       return (
-        <div key={idx} className="my-3 bg-slate-900 rounded-xl p-4 font-mono text-[11px] text-emerald-400 overflow-x-auto shadow-inner border border-white/10">
-          <div className="flex items-center gap-2 mb-2 opacity-50 text-[9px] uppercase font-black tracking-widest text-white border-b border-white/5 pb-2">
-            <Terminal size={10} /> Output Block
+        <div key={idx} className="my-3 bg-slate-900 rounded-2xl p-4 font-mono text-[11px] text-indigo-300 overflow-x-auto shadow-xl border border-white/5">
+          <div className="flex items-center gap-2 mb-2 opacity-50 text-[9px] uppercase font-black tracking-[0.2em] text-white">
+            <Terminal size={12} /> Resource Context / Code
           </div>
           <pre className="whitespace-pre-wrap leading-relaxed">{part.trim()}</pre>
         </div>
       );
     }
 
-    // 2. Handle text formatting within this part
     return (
       <div key={idx} className="whitespace-pre-wrap leading-relaxed">
-        {part.split(/(\*\*.*?\*\*|`.*?`|https?:\/\/\S+)/g).map((subPart, subIdx) => {
+        {part.split(/(\*\*.*?\*\*|`.*?`|https?:\/\/\S+|[Δ∑∫√αβγθλμπφψΩ→∀∃∈∉⊂⊃⊆⊇∩∪]) /g).map((subPart, subIdx) => {
           if (subPart.startsWith('**') && subPart.endsWith('**')) {
-            return <strong key={subIdx} className="font-black text-slate-900 bg-black/5 px-0.5 rounded">{subPart.slice(2, -2)}</strong>;
+            return <strong key={subIdx} className="font-black text-slate-950 px-0.5 rounded">{subPart.slice(2, -2)}</strong>;
           }
           if (subPart.startsWith('`') && subPart.endsWith('`')) {
-            return <code key={subIdx} className="bg-slate-100 text-indigo-600 px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold mx-0.5 border border-slate-200">{subPart.slice(1, -1)}</code>;
+            return <code key={subIdx} className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-lg font-mono text-[10px] font-bold mx-0.5 border border-indigo-100">{subPart.slice(1, -1)}</code>;
           }
           if (subPart.match(/^https?:\/\//)) {
-            return <a key={subIdx} href={subPart} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-bold break-all">{subPart}</a>;
+            return <a key={subIdx} href={subPart} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-black break-all">{subPart}</a>;
+          }
+          // Highlight math symbols
+          if (subPart.length === 1 && /[Δ∑∫√αβγθλμπφψΩ→∀∃∈∉⊂⊃⊆⊇∩∪]/.test(subPart)) {
+              return <span key={subIdx} className="font-serif font-black text-indigo-600 text-sm mx-0.5">{subPart}</span>;
           }
           return <span key={subIdx}>{subPart}</span>;
         })}
@@ -147,16 +148,13 @@ const ChatRoom: React.FC = () => {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
         const aiRes = await aiService.askZay(content, user);
-        
-        // Save the AI message. Note: We store grounding data in a specific field or metadata if needed.
-        // For now, we'll prefix grounding data to the content or handle it via mediaUrl if complex.
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
-            type: aiRes.resources && aiRes.resources.length > 0 ? 'file' : 'text',
-            mediaUrl: (aiRes.resources || aiRes.grounding) ? JSON.stringify({ 
+            type: (aiRes.resources?.length || aiRes.grounding?.length) ? 'file' : 'text',
+            mediaUrl: JSON.stringify({ 
                 res: aiRes.resources || [], 
                 grounding: aiRes.grounding || [] 
-            }) : undefined
+            })
         });
       }
     } catch (e) {}
@@ -188,7 +186,7 @@ const ChatRoom: React.FC = () => {
       </div>
 
       {/* Messages */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-6 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-8 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
         {messages.map((msg, idx) => {
           const isProxyAI = msg.content.startsWith(AI_PREFIX);
           const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
@@ -208,34 +206,34 @@ const ChatRoom: React.FC = () => {
 
           return (
             <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} animate-in slide-in-from-bottom-2 duration-300`}>
-               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600' : isBot ? 'bg-indigo-950 shadow-indigo-200' : 'bg-slate-400'}`}>
+               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600 shadow-indigo-200/50' : isBot ? 'bg-indigo-950 shadow-indigo-900/20' : 'bg-slate-400'}`}>
                   {isBot ? <Bot size={16} /> : userInfo.name.charAt(0)}
                </div>
 
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                  <div className={`relative px-4 py-3 shadow-sm text-xs font-medium leading-relaxed rounded-[1.5rem]
-                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none shadow-indigo-100/30' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/20'}`}>
+                  <div className={`relative px-5 py-4 shadow-sm text-xs font-medium leading-relaxed rounded-[1.8rem]
+                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-200' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/30'}`}>
                     
-                    <div className="font-sans antialiased">{formatMessageContent(cleanContent)}</div>
+                    <div className="font-sans antialiased text-[13px]">{formatMessageContent(cleanContent)}</div>
                     
-                    {/* Grounding Links (Search Sources) */}
+                    {/* Grounding Source Links */}
                     {grounding.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                <Globe size={12} className="text-indigo-500" /> Search Sources
+                                <Globe size={12} className="text-indigo-500" /> Research References
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {grounding.map((chunk, i) => chunk.web && (
-                                    <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm">
-                                        <ExternalLink size={10} />
-                                        <span className="truncate max-w-[120px]">{chunk.web.title || "Reference"}</span>
+                                    <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm active:scale-95">
+                                        <ExternalLink size={11} />
+                                        <span className="truncate max-w-[140px]">{chunk.web.title || "Source"}</span>
                                     </a>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Media attachments from AI (Lesson resources) */}
+                    {/* Lesson Resources from AI Analysis */}
                     {resources.length > 0 && (
                         <div className="mt-4 space-y-3">
                             <div className="grid grid-cols-2 gap-2">
@@ -251,27 +249,27 @@ const ChatRoom: React.FC = () => {
                             <div className="space-y-1.5">
                                 {resources.filter(r => r.type !== 'image').map((file, i) => (
                                     <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl group/file">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <FileIcon size={14} className="text-indigo-500 shrink-0" />
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-8 h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-indigo-500 shadow-sm"><FileIcon size={14} /></div>
                                             <span className="text-[10px] font-black truncate text-slate-700">{file.name}</span>
                                         </div>
-                                        <button onClick={() => forceDownload(file.url, file.name)} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm">
+                                        <button onClick={() => forceDownload(file.url, file.name)} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm active:scale-90">
                                             <Download size={14} />
                                         </button>
                                     </div>
                                 ))}
                             </div>
                             {resources.length > 1 && (
-                                <button onClick={() => handleDownloadAll(resources)} className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm">
-                                    <Download size={14} /> {t('download_all') || 'Download All'} ({resources.length})
+                                <button onClick={() => handleDownloadAll(resources)} className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95">
+                                    <Download size={14} /> Download Package ({resources.length})
                                 </button>
                             )}
                         </div>
                     )}
 
-                    <div className="flex items-center justify-end gap-2 mt-2 opacity-30">
-                        <span className="text-[7px] font-black uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        {(isMe || isAdmin) && <button onClick={() => handleDelete(msg.id)} className="hover:text-rose-500 transition-colors"><Trash2 size={9} /></button>}
+                    <div className="flex items-center justify-end gap-2 mt-3 opacity-30">
+                        <span className="text-[7px] font-black uppercase tracking-widest">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        {(isMe || isAdmin) && <button onClick={() => handleDelete(msg.id)} className="hover:text-rose-500 transition-colors"><Trash2 size={10} /></button>}
                     </div>
                   </div>
                </div>
@@ -280,53 +278,54 @@ const ChatRoom: React.FC = () => {
         })}
       </div>
 
-      {/* Universal Lightbox for Chat */}
+      {/* LIGHTBOX: Advanced UI with Mobile Safe Areas */}
       {lightboxImage && (
         <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
-            {/* Generous top padding for mobile to avoid clash with status bars and app menu */}
-            <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-24 md:pt-12">
+            {/* Header: High padding to avoid status bars */}
+            <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-24 md:pt-14">
                 <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Media Viewer</span>
-                    <span className="text-sm md:text-base font-bold truncate max-w-[160px] md:max-w-md">{lightboxImage.name}</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-indigo-400">File Analysis Mode</span>
+                    <span className="text-sm md:text-base font-bold truncate max-w-[180px] md:max-w-md">{lightboxImage.name}</span>
                 </div>
                 <div className="flex items-center gap-2 md:gap-3">
                     <button 
                         onClick={() => forceDownload(lightboxImage.url, lightboxImage.name)} 
-                        className="px-5 md:px-6 py-3 bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl md:rounded-2xl border border-white/10 flex items-center gap-2 text-[10px] md:text-xs font-black uppercase tracking-widest transition-all shadow-xl active:scale-95"
+                        className="px-6 py-3.5 bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-2xl border border-white/10 flex items-center gap-2 text-[10px] md:text-xs font-black uppercase tracking-widest transition-all shadow-xl active:scale-95"
                     >
-                        <Download size={18}/> Save
+                        <Download size={18}/> Save to device
                     </button>
                     <button 
                         onClick={() => setLightboxImage(null)} 
-                        className="p-3 bg-white/10 hover:bg-rose-600 rounded-xl md:rounded-2xl border border-white/10 transition-all shadow-xl active:scale-95"
+                        className="p-3.5 bg-white/10 hover:bg-rose-600 text-white rounded-2xl border border-white/10 transition-all shadow-xl active:scale-95"
                         title="Close"
                     >
                         <X size={24} />
                     </button>
                 </div>
             </div>
-            <div className="flex-1 flex items-center justify-center p-4 md:p-10 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
+            <div className="flex-1 flex items-center justify-center p-4 md:p-12 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
                 <img 
                     src={lightboxImage.url} 
-                    className="max-w-full max-h-[65vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.3)] animate-in zoom-in-95 duration-500 border border-white/10" 
+                    className="max-w-full max-h-[60vh] md:max-h-[80vh] object-contain rounded-[2.5rem] shadow-[0_0_120px_rgba(99,102,241,0.35)] animate-in zoom-in-95 duration-500 border border-white/10" 
                     onClick={e => e.stopPropagation()} 
+                    alt="Resource Viewer"
                 />
             </div>
         </div>
       )}
 
-      {/* Input */}
+      {/* Chat Input Bar */}
       <div className="p-3 bg-white border-t border-slate-100 z-30 pb-safe shrink-0">
          <div className="flex items-end gap-3 max-w-4xl mx-auto">
             <input 
-                className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-5 py-3.5 outline-none text-xs font-bold transition-all h-12 shadow-inner"
+                className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-6 py-4 outline-none text-[13px] font-bold transition-all h-14 shadow-inner"
                 placeholder={t('chat_placeholder')}
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !isSending && handleSendMessage()}
             />
-            <button onClick={handleSendMessage} disabled={isSending} className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-90 disabled:opacity-50">
-                {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            <button onClick={handleSendMessage} disabled={isSending} className="w-14 h-14 flex items-center justify-center bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-90 disabled:opacity-50">
+                {isSending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
             </button>
          </div>
       </div>
