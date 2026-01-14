@@ -3,7 +3,7 @@ import React from 'react';
 import { BookOpen, Calculator, Atom, Globe, Book, GraduationCap, Heart, Languages, Brain, Activity, Scroll } from 'lucide-react';
 import { UserRole, Subject, User, AcademicItem, Language } from './types';
 
-export const APP_NAME = "1BacSM 2";
+export const APP_NAME = "1BacSMF-2";
 
 // Valid UUID for the Bot User to satisfy database constraints
 export const ZAY_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -192,7 +192,14 @@ export const TRANSLATIONS: Record<Language, any> = {
     homework_exercises: "Homework & Exercises",
     no_exams: "No exams",
     clean_slate: "Clean slate",
-    back_subjects: "Back to subjects"
+    back_subjects: "Back to subjects",
+    try_filter: "Try changing the filter or add a task",
+    placeholder_room: "e.g. Salle 4",
+    ac_status: "Academic Status: Active",
+    curriculum_shortcut: "Curriculum Shortcut",
+    upcoming_priority: "Upcoming Priority",
+    all_clear: "All clear",
+    in_hub: "in hub"
   },
   fr: {
     welcome: "Bienvenue",
@@ -289,7 +296,14 @@ export const TRANSLATIONS: Record<Language, any> = {
     homework_exercises: "Devoirs et Exercices",
     no_exams: "Aucun examen",
     clean_slate: "Tout est propre",
-    back_subjects: "Retour aux matières"
+    back_subjects: "Retour aux matières",
+    try_filter: "Essayez de changer le filtre ou d'ajouter une tâche",
+    placeholder_room: "ex. Salle 4",
+    ac_status: "Statut Académique: Actif",
+    curriculum_shortcut: "Raccourci Programme",
+    upcoming_priority: "Priorité à venir",
+    all_clear: "Tout est clair",
+    in_hub: "dans le hub"
   },
   ar: {
     welcome: "مرحباً",
@@ -386,6 +400,13 @@ export const TRANSLATIONS: Record<Language, any> = {
     homework_exercises: "الواجبات والتمارين",
     no_exams: "لا توجد امتحانات",
     clean_slate: "سجل نظيف",
-    back_subjects: "العودة للمواد"
+    back_subjects: "العودة للمواد",
+    try_filter: "جرب تغيير الفلتر أو أضف مهمة",
+    placeholder_room: "مثال: القاعة 4",
+    ac_status: "الحالة الدراسية: نشط",
+    curriculum_shortcut: "اختصارات المقرر",
+    upcoming_priority: "الأولويات القادمة",
+    all_clear: "لا توجد مهام قادمة",
+    in_hub: "في المنصة"
   }
 };
