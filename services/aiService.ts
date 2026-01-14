@@ -6,6 +6,7 @@ import { supabaseService } from './supabaseService';
 interface AiResponse {
   text: string;
   resources?: any[];
+  grounding?: any[];
   type: 'text' | 'image' | 'file';
 }
 
@@ -15,7 +16,7 @@ export const aiService = {
     
     if (!apiKey) {
       console.error("CRITICAL: API_KEY is undefined.");
-      return { text: "System Error: API Key missing.", type: 'text' };
+      return { text: "System Error: API Key configuration missing.", type: 'text' };
     }
 
     try {
@@ -23,8 +24,10 @@ export const aiService = {
       
       const freshState = await supabaseService.fetchFullState();
       const lessons = freshState.lessons || [];
+      const items = freshState.items || [];
       const subjects = freshState.subjects || [];
 
+      // Build context for Lessons (Library)
       const lessonContext = lessons
         .filter(l => l.isPublished)
         .map(l => {
@@ -34,52 +37,67 @@ export const aiService = {
             url: a.url,
             type: a.type
           }));
+          return `[LESSON] ID:${l.id} | TITLE:${l.title} | SUBJ:${subject} | DESC:${l.description} | RESOURCES:${JSON.stringify(attachmentsJson)}`;
+        })
+        .join('\n');
 
-          return `ID:${l.id} | TITLE:${l.title} | SUBJ:${subject} | DESC:${l.description} | RESOURCES:${JSON.stringify(attachmentsJson)}`;
+      // Build context for Academic Items (Homework/Exams/Tasks)
+      const taskContext = items
+        .map(i => {
+          const subject = subjects.find(s => s.id === i.subjectId)?.name.en || 'General';
+          return `[TASK/HW] ID:${i.id} | TYPE:${i.type} | TITLE:${i.title} | SUBJ:${subject} | DUE:${i.date} | NOTES:${i.notes}`;
         })
         .join('\n');
 
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
       const systemInstruction = `
-        You are Zay, a brilliant academic assistant for a 1Bac Science Math (SM) student named ${userName}.
+        You are Zay, the smart academic assistant for the 1Bac Science Math (SM) classroom. 
+        You are talking to ${userName}.
 
-        **CORE MISSION:**
-        - You are a helpful tutor. You explain complex concepts (Logic, Physics, etc.) clearly.
-        - If the user asks for "exercises" or "série d'exercices" for a specific lesson:
-          1. Find the lesson in the context.
-          2. Generate a custom "Série d'Exercices" with 3-5 problems.
-          3. Use standard mathematical notation (e.g., Δ, ∑, ∫, √, α, β, subscripts/superscripts).
+        **DATABASE CONTEXT:**
+        --- LESSONS IN LIBRARY ---
+        ${lessonContext || "NO_LESSONS"}
+        
+        --- TEACHER TASKS/HOMEWORKS ---
+        ${taskContext || "NO_TASKS"}
 
-        **FORMATTING RULES:**
-        - Use standard Markdown for structure:
-          - **Bold** for emphasis or titles.
-          - \`Inline code\` for specific math terms.
-          - Triple backticks (\` \` \`) for structured lists or formula blocks.
-        - DO NOT use glitchy ASCII art or weird non-standard characters.
-        - Keep emojis to a absolute minimum (0 or 1 per message).
-        - If referring to a lesson's files, use ATTACH_FILES::[JSON_RESOURCES].
+        **CORE CAPABILITIES & LOGIC:**
+        1. **RESUMES (SUMMARIES)**: If asked for a "resume" or summary of a lesson, analyze the description and metadata provided. Generate a structured summary with Key Concepts, Formulas, and Definitions.
+        2. **EXERCISES**: 
+           - If the user asks for "exercises" or "série d'exercices", you must clarify if they want:
+             a) A NEW AI-generated series (based on lesson resources).
+             b) The specific homework/tasks the teacher already assigned in the database.
+           - If you have enough info, provide the relevant database tasks OR generate a new series using Science Math level difficulty.
+        3. **SMART RESPONSES**: You have access to Google Search. Use it for complex scientific queries or current events.
+        4. **FORMATTING**: 
+           - Use standard academic Markdown.
+           - Use math signs (Δ, ∑, ∫, √, subscripts/superscripts) correctly.
+           - NO weird ascii/glitch signs.
+           - Max 1 emoji.
+        5. **MISSING DATA**: If you can't find anything relevant in the database to answer a specific question about the class, reply: "REPORT_MISSING".
 
-        **CONTEXT DATA:**
-        ${lessonContext || "NO_LESSONS_IN_DATABASE"}
-
-        **LANGUAGE:** Reply in the language the student used (Arabic/French/English).
-
-        If no relevant lesson is found, reply: "REPORT_MISSING".
+        **ATTACHING FILES**:
+        When mentioning a lesson from the database, append: ATTACH_FILES::[JSON_RESOURCES_HERE]
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.5-flash',
         contents: userQuery,
-        config: { systemInstruction, temperature: 0.4 }, 
+        config: { 
+          systemInstruction, 
+          temperature: 0.3,
+          tools: [{ googleSearch: {} }]
+        },
       });
 
       let text = (response.text || "").trim();
       let resources: any[] = [];
+      const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
       if (text.includes("REPORT_MISSING")) {
         if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
-        return { text: `I couldn't find a direct match for that in our library, ${userName}. I've alerted the Admin to add it soon!`, type: 'text' };
+        return { text: `I couldn't find that specific data in our classroom hub, ${userName}. I've reported this to the admin!`, type: 'text' };
       }
 
       if (text.includes("ATTACH_FILES::")) {
@@ -88,15 +106,15 @@ export const aiService = {
         try {
             resources = JSON.parse(parts[1].trim());
         } catch (e) {
-            console.error("AI resource parsing failed");
+            console.error("AI returned malformed JSON for resources");
         }
       }
 
-      return { text, resources, type: 'text' };
+      return { text, resources, grounding, type: 'text' };
 
     } catch (error) {
       console.error("AI Service Error:", error);
-      return { text: "I'm having some trouble thinking right now. Please try again!", type: 'text' };
+      return { text: "Connection error. Please check your internet or try again.", type: 'text' };
     }
   }
 };
