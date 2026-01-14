@@ -23,7 +23,6 @@ export const aiService = {
       
       const freshState = await supabaseService.fetchFullState();
       const lessons = freshState.lessons || [];
-      const items = freshState.items || [];
       const subjects = freshState.subjects || [];
 
       const lessonContext = lessons
@@ -43,33 +42,36 @@ export const aiService = {
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
       const systemInstruction = `
-        You are Zay, a brilliant academic assistant for a 1Bac Science Math student named ${userName}.
+        You are Zay, a brilliant academic assistant for a 1Bac Science Math (SM) student named ${userName}.
 
-        **BEHAVIOR:**
-        - You are helpful, encouraging, and highly academic.
-        - If a user asks for "exercises" or "série d'exercices" for a specific lesson in the database:
-          1. Find the lesson details from the context below.
-          2. Generate a custom "Series d'exercices" (Worksheet) with at least 3 high-quality problems ranging from easy to difficult.
-          3. Focus on 1Bac SM level complexity (Logic, Physics, etc.).
-        - If the user asks for files, always include the relevant ATTACH_FILES:: link.
+        **CORE MISSION:**
+        - You are a helpful tutor. You explain complex concepts (Logic, Physics, etc.) clearly.
+        - If the user asks for "exercises" or "série d'exercices" for a specific lesson:
+          1. Find the lesson in the context.
+          2. Generate a custom "Série d'Exercices" with 3-5 problems.
+          3. Use standard mathematical notation (e.g., Δ, ∑, ∫, √, α, β, subscripts/superscripts).
+
+        **FORMATTING RULES:**
+        - Use standard Markdown for structure:
+          - **Bold** for emphasis or titles.
+          - \`Inline code\` for specific math terms.
+          - Triple backticks (\` \` \`) for structured lists or formula blocks.
+        - DO NOT use glitchy ASCII art or weird non-standard characters.
+        - Keep emojis to a absolute minimum (0 or 1 per message).
+        - If referring to a lesson's files, use ATTACH_FILES::[JSON_RESOURCES].
 
         **CONTEXT DATA:**
-        ${lessonContext || "NO_LESSONS_AVAILABLE"}
+        ${lessonContext || "NO_LESSONS_IN_DATABASE"}
 
-        **STRICT FORMATTING:**
-        1. **NO WEIRD SIGNS**: Do not use complex markdown, glitch text, or excessive bolding.
-        2. **PLAIN TEXT ONLY**: Keep it simple and readable on small screens.
-        3. **LIMIT EMOJIS**: Use a maximum of 1 emoji per message, only if necessary.
-        4. **LANGUAGE**: Reply in the student's language (English, French, or Arabic/Darija).
+        **LANGUAGE:** Reply in the language the student used (Arabic/French/English).
 
-        **MISSING CONTENT:**
-        If no lesson matches the user's query, reply exactly: "REPORT_MISSING".
+        If no relevant lesson is found, reply: "REPORT_MISSING".
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         contents: userQuery,
-        config: { systemInstruction, temperature: 0.3 }, 
+        config: { systemInstruction, temperature: 0.4 }, 
       });
 
       let text = (response.text || "").trim();
@@ -77,17 +79,16 @@ export const aiService = {
 
       if (text.includes("REPORT_MISSING")) {
         if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
-        return { text: `I couldn't find a lesson matching that topic in our library, ${userName}. I've noted this for the Admin to update!`, type: 'text' };
+        return { text: `I couldn't find a direct match for that in our library, ${userName}. I've alerted the Admin to add it soon!`, type: 'text' };
       }
 
-      // Handle file attachments if AI decided to include them
       if (text.includes("ATTACH_FILES::")) {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
         try {
             resources = JSON.parse(parts[1].trim());
         } catch (e) {
-            console.error("AI returned invalid JSON for files");
+            console.error("AI resource parsing failed");
         }
       }
 
@@ -95,7 +96,7 @@ export const aiService = {
 
     } catch (error) {
       console.error("AI Service Error:", error);
-      return { text: "I'm having trouble connecting right now. Please try again in a moment.", type: 'text' };
+      return { text: "I'm having some trouble thinking right now. Please try again!", type: 'text' };
     }
   }
 };
