@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { User } from '../types';
+import { GoogleGenAI } from "@google/genai";
+import { User, ChatMessage } from '../types';
 import { supabaseService } from './supabaseService';
 
 interface AiResponse {
@@ -11,7 +11,7 @@ interface AiResponse {
 }
 
 /**
- * Utility to convert image URL to base64 for AI "Reading"
+ * Utility to convert image URL to base64 for AI Multimodal Vision
  */
 async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
     try {
@@ -32,7 +32,7 @@ async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: 
 }
 
 export const aiService = {
-  askZay: async (userQuery: string, requestingUser: User | null): Promise<AiResponse> => {
+  askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[]): Promise<AiResponse> => {
     const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
@@ -47,77 +47,82 @@ export const aiService = {
       const items = freshState.items || [];
       const subjects = freshState.subjects || [];
 
-      // 1. Find relevant context first
-      const queryLower = userQuery.toLowerCase();
+      // 1. Contextual Memory: Format the last few messages for the AI
+      // We exclude the AI_PREFIX from old messages to keep it clean
+      const recentHistory = history.slice(-10).map(m => {
+          const isAi = m.content.includes(":::AI_RESPONSE:::");
+          const content = m.content.replace(":::AI_RESPONSE:::", "");
+          return `${isAi ? 'Zay (You)' : 'Student'}: ${content}`;
+      }).join('\n');
+
+      // 2. Identify Target Lesson: Find if the user is talking about a specific lesson in current query or history
+      const searchSpace = (userQuery + " " + recentHistory).toLowerCase();
       let targetLesson = lessons.find(l => 
-        queryLower.includes(l.title.toLowerCase()) || 
-        (l.keywords && l.keywords.some(k => queryLower.includes(k.toLowerCase())))
+        searchSpace.includes(l.title.toLowerCase()) || 
+        (l.keywords && l.keywords.some(k => searchSpace.includes(k.toLowerCase())))
       );
 
-      // 2. If a specific lesson is targeted, prepare its content for deep analysis
-      let parts: any[] = [{ text: userQuery }];
-      let lessonResourcesText = "";
+      // 3. Prepare Multimodal Parts: Text + Images from files
+      let contentsParts: any[] = [];
+      let lessonContextHeader = "";
 
       if (targetLesson) {
           const attachments = targetLesson.attachments || [];
-          // Send image content directly to AI so it can "read" the papers/exercises
+          lessonContextHeader = `[TARGET_LESSON_INFO]
+          Title: ${targetLesson.title}
+          Context: ${targetLesson.description}
+          Files Available: ${JSON.stringify(attachments.map(a => a.name))}
+          \n`;
+
+          // Add images from the lesson so Zay can "read" them
           for (const att of attachments) {
               if (att.type === 'image') {
                   const b64 = await imageUrlToBase64(att.url);
                   if (b64) {
-                      parts.push({
+                      contentsParts.push({
                           inlineData: { data: b64.data, mimeType: b64.mimeType }
                       });
                   }
               }
           }
-          lessonResourcesText = `[TARGET_LESSON_CONTENT] 
-          Title: ${targetLesson.title}
-          Description: ${targetLesson.description}
-          Files Available: ${JSON.stringify(attachments.map(a => a.name))}
-          `;
       }
 
-      const lessonContext = lessons
-        .filter(l => l.isPublished && l.id !== targetLesson?.id)
-        .slice(0, 5) // Keep context manageable
-        .map(l => `[OTHER_LESSON] TITLE:${l.title} | DESC:${l.description}`)
-        .join('\n');
+      // Add the text prompt at the end of the parts
+      contentsParts.push({ text: userQuery });
 
       const taskContext = items
-        .map(i => `[DATABASE_HW_OR_TASK] TITLE:${i.title} | TYPE:${i.type} | DUE:${i.date} | NOTES:${i.notes}`)
+        .map(i => `[DATABASE_TASK] ID: ${i.id} | TYPE: ${i.type} | TITLE: ${i.title} | DUE: ${i.date} | NOTES: ${i.notes}`)
         .join('\n');
 
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
       const systemInstruction = `
-        You are Zay, the elite academic assistant for the 1Bac Science Math (SM) classroom.
-        You are talking to ${userName}.
+        You are Zay, the brilliant academic assistant for a 1Bac Science Math (SM) student named ${userName}.
+        
+        **CONVERSATION MEMORY (Last 10 turns):**
+        ${recentHistory}
 
-        **INTELLIGENCE RULES:**
-        1. **RESUMES (SUMMARIES)**: When asked for a resume of a lesson, analyze the [TARGET_LESSON_CONTENT] and any images provided in the prompt. Create a professional academic summary with: 
-           - Key Definitions
-           - Critical Formulas (using proper math signs)
-           - Core Methodology.
-        2. **EXERCISES vs HOMEWORK**:
-           - "Homework" (Devoirs/Tasks): Refers to specific teacher assignments in the [DATABASE_HW_OR_TASK] section.
-           - "Exercises": Can mean either the database homework OR a new series you generate.
-           - **Action**: If the user is unclear, ask: "Do you want the specific homework the teacher assigned in the database, or should I generate a new 'Série d'exercices' based on the lesson materials?"
-        3. **READING CONTENT**: You have been provided with images of lesson papers. Analyze the text and diagrams in these images to answer questions or generate similar practice problems.
-        4. **SEARCH**: Use Google Search for complex scientific proofs, logic paradoxes, or current academic standards.
-        5. **FORMATTING**: Use high-quality Markdown. Use math symbols (Δ, ∑, ∫, √, →, ∀, ∃, ∈) and LaTeX-style bolding for vectors.
-
-        **CONTEXT:**
-        ${lessonResourcesText}
+        **DATABASE CONTEXT:**
+        ${lessonContextHeader}
         ${taskContext}
-        ${lessonContext}
 
-        If you find a matching lesson, always include the file resources using: ATTACH_FILES::[JSON_ARRAY_OF_ATTACHMENTS]
+        **OPERATIONAL GUIDELINES:**
+        1. **RESUMES (SUMMARIES)**: When asked for a resume, analyze the [TARGET_LESSON_INFO] and any images provided. Images are actual lesson papers/whiteboards. Extract definitions, formulas, and theorems from them to create a high-quality academic summary.
+        2. **EXERCISES vs HOMEWORK**:
+           - If a student says "exercises" or "homework" and it's unclear:
+             ASK: "Would you like me to show the homework the teacher assigned in the database, or should I generate a NEW series of exercises based on the lesson papers I've analyzed?"
+           - If they want the teacher's version, search [DATABASE_TASK].
+           - If they want a generated series, create 3-5 challenging SM-level problems based on the analyzed file content.
+        3. **SMART MEMORY**: If the student says something like "yes", "do it", or "@zay okay," use the CONVERSATION MEMORY to understand the context of the previous turn.
+        4. **SEARCH**: You have access to Google Search. Use it for complex scientific queries or verifying math proofs.
+        5. **FORMATTING**: Use high-quality Markdown. Use math signs (Δ, ∑, ∫, √, α, β, subscripts/superscripts) for professional notation.
+
+        If a specific lesson is found, append ATTACH_FILES::[JSON_ARRAY] to your response.
       `;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: { parts },
+        contents: { parts: contentsParts },
         config: { 
           systemInstruction, 
           temperature: 0.3,
@@ -135,7 +140,7 @@ export const aiService = {
         try {
             resources = JSON.parse(parts[1].trim());
         } catch (e) {
-            console.error("AI resource parsing error");
+            console.error("AI resource parsing failed");
         }
       }
 
@@ -143,7 +148,7 @@ export const aiService = {
 
     } catch (error) {
       console.error("AI Service Error:", error);
-      return { text: "I'm having trouble analyzing the files right now. Please try again.", type: 'text' };
+      return { text: "I'm having a bit of trouble connecting to my database. Could you try asking again?", type: 'text' };
     }
   }
 };
