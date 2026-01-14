@@ -14,8 +14,8 @@ export const aiService = {
     const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
-      console.error("CRITICAL: API_KEY is undefined in browser environment.");
-      return { text: "System Error: API Key configuration missing.", type: 'text' };
+      console.error("CRITICAL: API_KEY is undefined.");
+      return { text: "System Error: API Key missing.", type: 'text' };
     }
 
     try {
@@ -36,48 +36,40 @@ export const aiService = {
             type: a.type
           }));
 
-          return `ID:${l.id} | TITLE:${l.title} | SUBJ:${subject} | DESC:${l.description} | RESOURCES_JSON:${JSON.stringify(attachmentsJson)}`;
+          return `ID:${l.id} | TITLE:${l.title} | SUBJ:${subject} | DESC:${l.description} | RESOURCES:${JSON.stringify(attachmentsJson)}`;
         })
         .join('\n');
-
-      const today = new Date();
-      const upcomingItems = items
-        .filter(i => new Date(i.date) >= today)
-        .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-        .map(i => `DUE:${i.date} | TYPE:${i.type} | TITLE:${i.title} | SUBJ:${subjects.find(s => s.id === i.subjectId)?.name.en}`);
-      
-      const calendarContext = upcomingItems.length > 0 
-        ? upcomingItems.join('\n') 
-        : "NO_UPCOMING_TASKS";
 
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
       const systemInstruction = `
-        You are Zay, a smart academic assistant for ${userName}.
+        You are Zay, a brilliant academic assistant for a 1Bac Science Math student named ${userName}.
 
-        **DATABASE CONTEXT:**
-        ${lessonContext || "EMPTY_LIBRARY"}
-        
-        TASKS:
-        ${calendarContext}
+        **BEHAVIOR:**
+        - You are helpful, encouraging, and highly academic.
+        - If a user asks for "exercises" or "série d'exercices" for a specific lesson in the database:
+          1. Find the lesson details from the context below.
+          2. Generate a custom "Series d'exercices" (Worksheet) with at least 3 high-quality problems ranging from easy to difficult.
+          3. Focus on 1Bac SM level complexity (Logic, Physics, etc.).
+        - If the user asks for files, always include the relevant ATTACH_FILES:: link.
 
-        **STRICT FORMATTING RULES:**
-        1. **PLAIN TEXT ONLY**: Use standard alphanumeric characters. Do NOT use weird signs, complex markdown decorations, or ASCII art.
-        2. **EMOJIS**: Use emojis very rarely (maximum 1 per message).
-        3. **LANGUAGE**: Reply in the user's language (Darija, Arabic, French, or English).
-        4. **FILE SHARING**: 
-           - You MUST include ALL relevant resources from the lesson's RESOURCES_JSON.
-           - Append them using: ATTACH_FILES::[JSON_ARRAY_OF_RESOURCES]
-        5. **MISSING**: If no lesson matches, reply "REPORT_MISSING".
+        **CONTEXT DATA:**
+        ${lessonContext || "NO_LESSONS_AVAILABLE"}
 
-        **Example Response:**
-        "Here is the lesson on limits. ATTACH_FILES::[{\"name\":\"Notes\",\"url\":\"...\",\"type\":\"image\"}]"
+        **STRICT FORMATTING:**
+        1. **NO WEIRD SIGNS**: Do not use complex markdown, glitch text, or excessive bolding.
+        2. **PLAIN TEXT ONLY**: Keep it simple and readable on small screens.
+        3. **LIMIT EMOJIS**: Use a maximum of 1 emoji per message, only if necessary.
+        4. **LANGUAGE**: Reply in the student's language (English, French, or Arabic/Darija).
+
+        **MISSING CONTENT:**
+        If no lesson matches the user's query, reply exactly: "REPORT_MISSING".
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         contents: userQuery,
-        config: { systemInstruction, temperature: 0.2 }, 
+        config: { systemInstruction, temperature: 0.3 }, 
       });
 
       let text = (response.text || "").trim();
@@ -85,24 +77,25 @@ export const aiService = {
 
       if (text.includes("REPORT_MISSING")) {
         if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
-        return { text: `I couldn't find that lesson, ${userName}. I've reported this to the admin.`, type: 'text' };
+        return { text: `I couldn't find a lesson matching that topic in our library, ${userName}. I've noted this for the Admin to update!`, type: 'text' };
       }
 
+      // Handle file attachments if AI decided to include them
       if (text.includes("ATTACH_FILES::")) {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
         try {
             resources = JSON.parse(parts[1].trim());
         } catch (e) {
-            console.error("AI sent invalid JSON", e);
+            console.error("AI returned invalid JSON for files");
         }
       }
 
       return { text, resources, type: 'text' };
 
     } catch (error) {
-      console.error("AI Service Failure:", error);
-      return { text: "Connection error. Please try again.", type: 'text' };
+      console.error("AI Service Error:", error);
+      return { text: "I'm having trouble connecting right now. Please try again in a moment.", type: 'text' };
     }
   }
 };
