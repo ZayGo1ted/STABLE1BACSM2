@@ -17,20 +17,15 @@ export const getSupabase = () => {
 
 /**
  * Compression Utility
- * Converts images to WebP and downscales huge dimensions to max 1920px width.
+ * Optimized for Mobile PWA:
+ * 1. Max width 1600px (Balance between quality and RAM usage)
+ * 2. Aggressive cleanup of canvas/image objects
  */
 const compressFile = async (file: File): Promise<File> => {
-  // If not an image, return original
-  if (!file.type.startsWith('image/')) {
-    return file;
-  }
+  if (!file.type.startsWith('image/')) return file;
+  if (file.type.includes('svg') || file.type.includes('gif')) return file;
 
-  // Skip SVGs or GIFs to preserve animation/vectors
-  if (file.type.includes('svg') || file.type.includes('gif')) {
-    return file;
-  }
-
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     
@@ -42,8 +37,8 @@ const compressFile = async (file: File): Promise<File> => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Smart Resizing: Max width 1920px (Full HD)
-        const MAX_WIDTH = 1920;
+        // 1600px is safer for mobile memory than 1920px
+        const MAX_WIDTH = 1600; 
         let width = img.width;
         let height = img.height;
 
@@ -55,29 +50,27 @@ const compressFile = async (file: File): Promise<File> => {
         canvas.width = width;
         canvas.height = height;
         
-        // Draw image to canvas
         ctx?.drawImage(img, 0, 0, width, height);
 
-        // Compress to WebP at 75% quality
         canvas.toBlob(
           (blob) => {
+            // Cleanup memory immediately
+            img.src = ''; 
+            canvas.width = 0;
+            canvas.height = 0;
+
             if (!blob) {
-              resolve(file); // Fallback to original if blob failed
+              resolve(file); 
               return;
             }
             
-            // Create new File with .webp extension
             const newName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
             const newFile = new File([blob], newName, {
               type: 'image/webp',
               lastModified: Date.now(),
             });
             
-            // Manually clear large variables to help GC on mobile
-            img.src = '';
-            reader.onload = null;
-            
-            console.log(`Compression: ${file.size}B -> ${newFile.size}B`);
+            console.log(`Compressed: ${(file.size/1024/1024).toFixed(2)}MB -> ${(newFile.size/1024/1024).toFixed(2)}MB`);
             resolve(newFile);
           },
           'image/webp',
@@ -85,10 +78,9 @@ const compressFile = async (file: File): Promise<File> => {
         );
       };
       
-      img.onerror = (err) => resolve(file); // Fallback
+      img.onerror = () => resolve(file);
     };
-    
-    reader.onerror = (err) => resolve(file); // Fallback
+    reader.onerror = () => resolve(file);
   });
 };
 
@@ -150,22 +142,26 @@ export const supabaseService = {
   updateAcademicItem: async (item: AcademicItem) => getSupabase().from('academic_items').update({ title: item.title, subject_id: item.subjectId, type: item.type, date: item.date, time: item.time, location: item.location, notes: item.notes }).eq('id', item.id),
   deleteAcademicItem: async (id: string) => getSupabase().from('academic_items').delete().eq('id', id),
 
-  createLesson: async (lesson: Lesson) => getSupabase().from('lessons').insert([{ 
-    id: lesson.id, title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, ai_metadata: lesson.aiMetadata,
-    attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished 
-  }]),
+  createLesson: async (lesson: Lesson) => {
+    const { error } = await getSupabase().from('lessons').insert([{ 
+      id: lesson.id, title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, ai_metadata: lesson.aiMetadata,
+      attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished 
+    }]);
+    if (error) throw error; // Throw to UI
+  },
 
-  updateLesson: async (lesson: Lesson) => getSupabase().from('lessons').update({
-    title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, ai_metadata: lesson.aiMetadata,
-    attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished
-  }).eq('id', lesson.id),
+  updateLesson: async (lesson: Lesson) => {
+    const { error } = await getSupabase().from('lessons').update({
+      title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, ai_metadata: lesson.aiMetadata,
+      attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished
+    }).eq('id', lesson.id);
+    if (error) throw error; // Throw to UI
+  },
   
   deleteLesson: async (id: string) => {
-    // We request a count to ensure something was actually deleted
     const { error, count } = await getSupabase().from('lessons').delete({ count: 'exact' }).eq('id', id);
     if (error) return { error };
-    // If count is 0, it means RLS or ID mismatch prevented deletion
-    if (count === 0) return { error: { message: 'Database refused deletion. Check permissions.' } };
+    if (count === 0) return { error: { message: 'Deletion failed. Item not found or permission denied.' } };
     return { error: null };
   },
   
@@ -183,12 +179,14 @@ export const supabaseService = {
   clearChat: async () => getSupabase().from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
 
   uploadFile: async (file: File) => {
-    // 1. Compress file if it's an image
+    // 1. Compress
     const processedFile = await compressFile(file);
 
-    // 2. Upload processed file
-    const cleanName = processedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    // 2. Sanitize Filename (Critical for Supabase Storage)
+    const cleanName = processedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_').substring(0, 50);
     const fileName = `${Date.now()}_${cleanName}`;
+    
+    // 3. Upload
     const { error } = await getSupabase().storage.from('lessons').upload(fileName, processedFile, {
         cacheControl: '3600',
         upsert: false
@@ -196,18 +194,16 @@ export const supabaseService = {
     
     if (error) throw error;
     
-    // 3. Get Public URL
+    // 4. Return Public URL
     const { data } = getSupabase().storage.from('lessons').getPublicUrl(fileName);
-    return data.publicUrl;
+    return { url: data.publicUrl, size: processedFile.size };
   },
 
   createAiLog: async (userId: string, query: string) => {
     if (!userId) return;
     try {
-      return await getSupabase().from('ai_logs').insert([{ user_id: userId, query: query, status: 'unresolved' }]);
-    } catch (e) {
-      console.error("Failed to log AI query", e);
-    }
+      await getSupabase().from('ai_logs').insert([{ user_id: userId, query: query, status: 'unresolved' }]);
+    } catch (e) { console.error(e); }
   },
 
   fetchAiLogs: async () => {
