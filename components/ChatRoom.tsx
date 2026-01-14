@@ -50,7 +50,9 @@ const ChatRoom: React.FC = () => {
   // Input State
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [messagesEndRef] = [useRef<HTMLDivElement>(null)];
+  
+  // Refs for scroll management
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -98,10 +100,17 @@ const ChatRoom: React.FC = () => {
     };
   }, []);
 
+  // Use scrollTop for robust scrolling without layout shifts
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollContainerRef.current) {
+      const { scrollHeight, clientHeight } = scrollContainerRef.current;
+      scrollContainerRef.current.scrollTop = scrollHeight - clientHeight;
+    }
   };
-  useEffect(scrollToBottom, [messages.length]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages.length]);
 
   const getUserInfo = (userId: string, content: string) => {
     if (content.startsWith(AI_PREFIX)) {
@@ -117,6 +126,9 @@ const ChatRoom: React.FC = () => {
     setIsSending(true);
     const content = inputText;
     setInputText('');
+    
+    // Optimistic scroll
+    scrollToBottom();
     
     try {
       await supabaseService.sendMessage({ userId: user.id, content });
@@ -151,27 +163,30 @@ const ChatRoom: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#f2f6ff] relative overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-2 bg-white/80 backdrop-blur-md border-b border-white/50 flex justify-between items-center z-20 shadow-sm shrink-0">
+      {/* Header - Compact */}
+      <div className="px-4 py-2 bg-white/80 backdrop-blur-md border-b border-white/50 flex justify-between items-center z-20 shadow-sm shrink-0 h-12">
         <div>
-          <h2 className="text-sm font-black text-slate-900 tracking-tight">{t('chat')}</h2>
+          <h2 className="text-xs font-black text-slate-900 tracking-tight">{t('chat')}</h2>
           <div className="flex items-center gap-1.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
             </span>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{onlineUserIds.size} Online</p>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{onlineUserIds.size} Online</p>
           </div>
         </div>
         {isAdmin && (
              <button onClick={async () => { if(confirm("Clear ALL chat?")) await supabaseService.clearChat(); }} className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all">
-                  <Trash2 size={14} />
+                  <Trash2 size={12} />
              </button>
         )}
       </div>
 
       {/* Messages Area - Smaller text, fitting size */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#f2f6ff]">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#f2f6ff] scroll-smooth"
+      >
         {messages.map((msg, idx) => {
           const isProxyAI = msg.content.startsWith(AI_PREFIX);
           const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
@@ -185,17 +200,17 @@ const ChatRoom: React.FC = () => {
           const isSequence = prevMsg && prevMsg.userId === msg.userId && !isProxyAI && !(prevMsg.content.startsWith(AI_PREFIX));
 
           return (
-            <div key={msg.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''} ${isSequence ? 'mt-0.5' : 'mt-3'} animate-in slide-in-from-bottom-2 group`}>
+            <div key={msg.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''} ${isSequence ? 'mt-0.5' : 'mt-2'} animate-in slide-in-from-bottom-1 group`}>
                {/* Avatar */}
-               <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-black text-white shadow-sm transition-all ${!isSequence ? (isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400') : 'opacity-0'}`}>
-                  {!isSequence && (isBot ? <Bot size={14} /> : userInfo.name.charAt(0))}
+               <div className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${!isSequence ? (isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400') : 'opacity-0'}`}>
+                  {!isSequence && (isBot ? <Bot size={12} /> : userInfo.name.charAt(0))}
                </div>
 
                {/* Bubble */}
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                  {!isSequence && !isMe && <span className="text-[9px] font-bold text-slate-400 ml-1 mb-0.5">{userInfo.name}</span>}
+                  {!isSequence && !isMe && <span className="text-[8px] font-bold text-slate-400 ml-1 mb-0.5">{userInfo.name}</span>}
                   
-                  <div className={`relative px-3 py-2 shadow-sm text-[13px] font-medium leading-relaxed
+                  <div className={`relative px-3 py-1.5 shadow-sm text-[11px] font-medium leading-relaxed
                     ${isMe 
                       ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm' 
                       : isBot 
@@ -210,7 +225,7 @@ const ChatRoom: React.FC = () => {
                     {msg.mediaUrl && (
                         <div className="mt-2">
                             {msg.type === 'image' ? (
-                                <img src={msg.mediaUrl} className="rounded-lg max-h-48 object-cover" alt="attachment" />
+                                <img src={msg.mediaUrl} className="rounded-lg max-h-32 object-cover" alt="attachment" />
                             ) : (
                                 <a href={msg.mediaUrl} target="_blank" className="flex items-center gap-2 bg-black/10 p-2 rounded-lg text-[10px] underline">
                                     <FileIcon size={12}/> Attachment
@@ -221,11 +236,11 @@ const ChatRoom: React.FC = () => {
                     
                     {/* Time & Actions */}
                     <div className="flex items-center justify-end gap-2 mt-0.5 opacity-60">
-                        <span className="text-[8px] font-bold uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <span className="text-[7px] font-bold uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                         
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleReport(msg)} title="Report" className="hover:text-amber-400"><AlertTriangle size={10} /></button>
-                            {canDelete && <button onClick={() => handleDelete(msg.id)}><Trash2 size={10} /></button>}
+                            <button onClick={() => handleReport(msg)} title="Report" className="hover:text-amber-400"><AlertTriangle size={8} /></button>
+                            {canDelete && <button onClick={() => handleDelete(msg.id)}><Trash2 size={8} /></button>}
                         </div>
                     </div>
                   </div>
@@ -233,21 +248,20 @@ const ChatRoom: React.FC = () => {
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
       <div className="p-2 bg-white border-t border-slate-100 relative z-30 pb-safe shrink-0">
          <div className="flex items-end gap-2">
             <input 
-                className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-4 py-2.5 outline-none text-sm font-medium transition-all"
+                className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-4 py-2 outline-none text-xs font-medium transition-all h-10"
                 placeholder={t('chat_placeholder')}
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
             />
-            <button onClick={handleSendMessage} disabled={isSending} className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">
-                <Send size={16} className={lang === 'ar' ? 'rtl-flip' : ''} />
+            <button onClick={handleSendMessage} disabled={isSending} className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">
+                <Send size={14} className={lang === 'ar' ? 'rtl-flip' : ''} />
             </button>
          </div>
       </div>
