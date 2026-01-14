@@ -15,22 +15,11 @@ import { ZAY_USER_ID } from '../constants';
 
 const AI_PREFIX = ":::AI_RESPONSE:::";
 
-/**
- * Advanced Message Formatter for Academic Content & Math
- * Handles:
- * 1. Code Blocks
- * 2. Bold (**text**)
- * 3. Inline Code (`code`)
- * 4. URLs
- * 5. Scientific/Math Symbols (Rendered in serif font)
- */
 const formatMessageContent = (text: string) => {
-  // 1. Split by Code Blocks first to preserve them
   const codeBlockRegex = /```([\s\S]*?)```/g;
   const parts = text.split(codeBlockRegex);
   
   return parts.map((part, idx) => {
-    // Odd indices are code blocks
     if (idx % 2 === 1) {
       return (
         <div key={idx} className="my-3 bg-slate-900 rounded-2xl p-4 font-mono text-[11px] text-indigo-300 overflow-x-auto shadow-xl border border-white/5 relative group">
@@ -42,31 +31,23 @@ const formatMessageContent = (text: string) => {
       );
     }
 
-    // 2. Process text content (Markdown + Math)
-    // Enhanced regex to catch more math symbols and ensure they don't break
-    // Includes: Greek letters, Operators, Logical symbols, Arrows
     const complexSplitRegex = /(\*\*.*?\*\*|`.*?`|https?:\/\/\S+|[Δ∑∫√αβγθλμπφψΩωσερτξζ→←↔∀∃∈∉⊂⊃⊆⊇∩∪∞≈≠≤≥±×÷°])/g;
     
     return (
       <div key={idx} className="whitespace-pre-wrap leading-relaxed">
         {part.split(complexSplitRegex).map((subPart, subIdx) => {
-          // Bold
           if (subPart.startsWith('**') && subPart.endsWith('**')) {
             return <strong key={subIdx} className="font-black text-slate-950 px-0.5 rounded bg-black/5">{subPart.slice(2, -2)}</strong>;
           }
-          // Inline Code
           if (subPart.startsWith('`') && subPart.endsWith('`')) {
             return <code key={subIdx} className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-lg font-mono text-[11px] font-bold mx-0.5 border border-indigo-100">{subPart.slice(1, -1)}</code>;
           }
-          // Links
           if (subPart.match(/^https?:\/\//)) {
             return <a key={subIdx} href={subPart} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-black break-all hover:text-indigo-800">{subPart}</a>;
           }
-          // Math Symbols (Render with Serif for clarity)
           if (subPart.length === 1 && /[Δ∑∫√αβγθλμπφψΩωσερτξζ→←↔∀∃∈∉⊂⊃⊆⊇∩∪∞≈≠≤≥±×÷°]/.test(subPart)) {
               return <span key={subIdx} className="font-serif font-black text-indigo-700 text-[1.1em] mx-[1px] inline-block">{subPart}</span>;
           }
-          // Regular Text
           return <span key={subIdx}>{subPart}</span>;
         })}
       </div>
@@ -161,14 +142,9 @@ const ChatRoom: React.FC = () => {
     const content = inputText;
     setInputText('');
     try {
-      // 1. Send User Message to DB first
       await supabaseService.sendMessage({ userId: user.id, content });
-
       if (content.toLowerCase().includes('@zay')) {
-        // 2. Pass current messages history to AI for context
         const aiRes = await aiService.askZay(content, user, messages);
-        
-        // 3. Send AI Response to DB
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
             type: (aiRes.resources?.length || aiRes.grounding?.length) ? 'file' : 'text',
@@ -227,19 +203,16 @@ const ChatRoom: React.FC = () => {
 
           return (
             <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} animate-in slide-in-from-bottom-2 duration-300`}>
-               {/* Avatar */}
                <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600 shadow-indigo-200/50' : isBot ? 'bg-indigo-950 shadow-indigo-900/20' : 'bg-slate-400'}`}>
                   {isBot ? <Bot size={16} /> : userInfo.name.charAt(0)}
                </div>
 
-               {/* Bubble */}
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
                   <div className={`relative px-5 py-4 shadow-sm text-xs font-medium leading-relaxed rounded-[1.8rem]
                     ${isMe ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-200' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/30'}`}>
                     
                     <div className="font-sans antialiased text-[13px]">{formatMessageContent(cleanContent)}</div>
                     
-                    {/* Grounding Source Links (Web) */}
                     {grounding.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
@@ -256,10 +229,8 @@ const ChatRoom: React.FC = () => {
                         </div>
                     )}
 
-                    {/* Lesson Resources from AI Analysis */}
                     {resources.length > 0 && (
                         <div className="mt-4 space-y-3 pt-2 border-t border-slate-50/50">
-                            {/* Images Grid */}
                             <div className="grid grid-cols-2 gap-2">
                                 {resources.filter(r => r.type === 'image').map((img, i) => (
                                     <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name})}>
@@ -271,20 +242,23 @@ const ChatRoom: React.FC = () => {
                                 ))}
                             </div>
                             
-                            {/* Files List */}
-                            <div className="space-y-1.5">
+                            <div className="space-y-2">
                                 {resources.filter(r => r.type !== 'image').map((file, i) => (
-                                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl group/file transition-colors hover:bg-indigo-50/50">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-8 h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-indigo-500 shadow-sm"><FileIcon size={14} /></div>
-                                            <span className="text-[10px] font-black truncate text-slate-700">{file.name}</span>
+                                    <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group/file w-full">
+                                        <div className="w-10 h-10 shrink-0 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm">
+                                            <FileIcon size={18} />
                                         </div>
-                                        <button onClick={() => forceDownload(file.url, file.name)} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm active:scale-90">
-                                            <Download size={14} />
+                                        <div className="flex-1 min-w-0 flex flex-col items-start overflow-hidden">
+                                            <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || "Untitled Document"}</span>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">PDF / DOC</span>
+                                        </div>
+                                        <button onClick={() => forceDownload(file.url, file.name || 'document')} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0">
+                                            <Download size={16} />
                                         </button>
                                     </div>
                                 ))}
                             </div>
+                            
                             {resources.length > 1 && (
                                 <button onClick={() => handleDownloadAll(resources)} className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95">
                                     <Download size={14} /> Download Package ({resources.length})
@@ -304,7 +278,6 @@ const ChatRoom: React.FC = () => {
         })}
       </div>
 
-      {/* LIGHTBOX: Advanced UI */}
       {lightboxImage && (
         <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-24 md:pt-14">
