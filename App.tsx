@@ -228,7 +228,7 @@ const App: React.FC = () => {
 
   if (configError && !isBrowserOffline) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50 p-6">
         <div className="max-w-md w-full bg-white p-10 rounded-[2.5rem] shadow-2xl border border-rose-100 text-center space-y-6">
           <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-4">
             <CloudOff size={40} />
@@ -243,7 +243,7 @@ const App: React.FC = () => {
 
   return (
     <AuthContext.Provider value={authValue}>
-      <div className="h-screen w-screen overflow-hidden bg-slate-50 relative select-none">
+      <div className="h-[100dvh] w-screen overflow-hidden bg-slate-50 relative select-none">
         {isBrowserOffline && (
           <div className="fixed top-0 left-0 right-0 bg-slate-800 text-white p-2 text-center text-[10px] font-black z-[100] flex items-center justify-center gap-2 shadow-xl">
             <WifiOff size={12} className="text-rose-400" /> OFFLINE MODE - VIEWING SAVED DATA
