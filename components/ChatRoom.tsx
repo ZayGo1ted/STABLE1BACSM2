@@ -147,7 +147,8 @@ const ChatRoom: React.FC = () => {
     try {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
-        const aiRes = await aiService.askZay(content, user);
+        // Pass the CURRENT local message state as history to Zay
+        const aiRes = await aiService.askZay(content, user, messages);
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
             type: (aiRes.resources?.length || aiRes.grounding?.length) ? 'file' : 'text',
