@@ -9,7 +9,7 @@ import {
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bot, AlertTriangle, Download, Loader2,
-  ChevronRight, CornerUpLeft, Terminal
+  ChevronRight, CornerUpLeft, Terminal, Globe, ExternalLink
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
@@ -25,7 +25,7 @@ const formatMessageContent = (text: string) => {
   const parts = text.split(codeBlockRegex);
   
   return parts.map((part, idx) => {
-    // Every odd index is a code block due to split
+    // Every odd index is a code block
     if (idx % 2 === 1) {
       return (
         <div key={idx} className="my-3 bg-slate-900 rounded-xl p-4 font-mono text-[11px] text-emerald-400 overflow-x-auto shadow-inner border border-white/10">
@@ -37,19 +37,16 @@ const formatMessageContent = (text: string) => {
       );
     }
 
-    // 2. Handle standard text formatting within this part
+    // 2. Handle text formatting within this part
     return (
       <div key={idx} className="whitespace-pre-wrap leading-relaxed">
         {part.split(/(\*\*.*?\*\*|`.*?`|https?:\/\/\S+)/g).map((subPart, subIdx) => {
-          // Bold
           if (subPart.startsWith('**') && subPart.endsWith('**')) {
             return <strong key={subIdx} className="font-black text-slate-900 bg-black/5 px-0.5 rounded">{subPart.slice(2, -2)}</strong>;
           }
-          // Inline Code / Math Terms
           if (subPart.startsWith('`') && subPart.endsWith('`')) {
             return <code key={subIdx} className="bg-slate-100 text-indigo-600 px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold mx-0.5 border border-slate-200">{subPart.slice(1, -1)}</code>;
           }
-          // URLs
           if (subPart.match(/^https?:\/\//)) {
             return <a key={subIdx} href={subPart} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-bold break-all">{subPart}</a>;
           }
@@ -150,10 +147,16 @@ const ChatRoom: React.FC = () => {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
         const aiRes = await aiService.askZay(content, user);
+        
+        // Save the AI message. Note: We store grounding data in a specific field or metadata if needed.
+        // For now, we'll prefix grounding data to the content or handle it via mediaUrl if complex.
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
             type: aiRes.resources && aiRes.resources.length > 0 ? 'file' : 'text',
-            mediaUrl: aiRes.resources && aiRes.resources.length > 0 ? JSON.stringify(aiRes.resources) : undefined
+            mediaUrl: (aiRes.resources || aiRes.grounding) ? JSON.stringify({ 
+                res: aiRes.resources || [], 
+                grounding: aiRes.grounding || [] 
+            }) : undefined
         });
       }
     } catch (e) {}
@@ -194,23 +197,45 @@ const ChatRoom: React.FC = () => {
           const isBot = userInfo.isBot;
           
           let resources: any[] = [];
+          let grounding: any[] = [];
           if (isProxyAI && msg.mediaUrl) {
-            try { resources = JSON.parse(msg.mediaUrl); } catch(e) {}
+            try { 
+                const meta = JSON.parse(msg.mediaUrl); 
+                resources = meta.res || [];
+                grounding = meta.grounding || [];
+            } catch(e) {}
           }
 
           return (
             <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} animate-in slide-in-from-bottom-2 duration-300`}>
-               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600 shadow-violet-200' : 'bg-slate-400'}`}>
+               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600' : isBot ? 'bg-indigo-950 shadow-indigo-200' : 'bg-slate-400'}`}>
                   {isBot ? <Bot size={16} /> : userInfo.name.charAt(0)}
                </div>
 
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
                   <div className={`relative px-4 py-3 shadow-sm text-xs font-medium leading-relaxed rounded-[1.5rem]
-                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-50 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/50'}`}>
+                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none shadow-indigo-100/30' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/20'}`}>
                     
                     <div className="font-sans antialiased">{formatMessageContent(cleanContent)}</div>
                     
-                    {/* Media attachments from AI */}
+                    {/* Grounding Links (Search Sources) */}
+                    {grounding.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                            <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                <Globe size={12} className="text-indigo-500" /> Search Sources
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {grounding.map((chunk, i) => chunk.web && (
+                                    <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm">
+                                        <ExternalLink size={10} />
+                                        <span className="truncate max-w-[120px]">{chunk.web.title || "Reference"}</span>
+                                    </a>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Media attachments from AI (Lesson resources) */}
                     {resources.length > 0 && (
                         <div className="mt-4 space-y-3">
                             <div className="grid grid-cols-2 gap-2">
@@ -257,9 +282,9 @@ const ChatRoom: React.FC = () => {
 
       {/* Universal Lightbox for Chat */}
       {lightboxImage && (
-        <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
-            {/* Shifted header down for mobile to avoid clash with browser or app bars */}
-            <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-20 md:pt-10">
+        <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
+            {/* Generous top padding for mobile to avoid clash with status bars and app menu */}
+            <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-24 md:pt-12">
                 <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Media Viewer</span>
                     <span className="text-sm md:text-base font-bold truncate max-w-[160px] md:max-w-md">{lightboxImage.name}</span>
@@ -283,7 +308,7 @@ const ChatRoom: React.FC = () => {
             <div className="flex-1 flex items-center justify-center p-4 md:p-10 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
                 <img 
                     src={lightboxImage.url} 
-                    className="max-w-full max-h-[70vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.3)] animate-in zoom-in-95 duration-500 border border-white/10" 
+                    className="max-w-full max-h-[65vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.3)] animate-in zoom-in-95 duration-500 border border-white/10" 
                     onClick={e => e.stopPropagation()} 
                 />
             </div>
