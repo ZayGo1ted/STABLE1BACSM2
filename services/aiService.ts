@@ -11,7 +11,7 @@ interface AiResponse {
 }
 
 /**
- * Utility to convert image URL to base64 for AI Multimodal Vision
+ * Helper: Converts remote image URLs to Base64 for Gemini Vision
  */
 async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
     try {
@@ -26,106 +26,132 @@ async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: 
             reader.readAsDataURL(blob);
         });
     } catch (e) {
-        console.error("Failed to fetch image for AI analysis", e);
+        console.error("AI Vision Fetch Error:", e);
         return null;
     }
 }
 
 export const aiService = {
-  askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[]): Promise<AiResponse> => {
+  askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = []): Promise<AiResponse> => {
     const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
-      return { text: "System Error: API Key configuration missing.", type: 'text' };
+      console.error("API_KEY missing");
+      return { text: "System Error: Missing AI Configuration.", type: 'text' };
     }
 
     try {
       const ai = new GoogleGenAI({ apiKey });
       
+      // 1. Fetch Real-time Database State
       const freshState = await supabaseService.fetchFullState();
       const lessons = freshState.lessons || [];
       const items = freshState.items || [];
       const subjects = freshState.subjects || [];
 
-      // 1. Contextual Memory: Format the last few messages for the AI
-      // We exclude the AI_PREFIX from old messages to keep it clean
-      const recentHistory = history.slice(-10).map(m => {
-          const isAi = m.content.includes(":::AI_RESPONSE:::");
-          const content = m.content.replace(":::AI_RESPONSE:::", "");
-          return `${isAi ? 'Zay (You)' : 'Student'}: ${content}`;
-      }).join('\n');
+      // 2. Build Conversation Memory (Last 10 turns)
+      // Filter out system messages or complex metadata to keep context clean
+      const recentHistory = history
+        .filter(m => !m.mediaUrl || m.mediaUrl.length < 500) // Skip heavy payloads in history
+        .slice(-10)
+        .map(m => {
+          const role = m.content.startsWith(":::AI_RESPONSE:::") ? "Zay" : "Student";
+          const cleanContent = m.content.replace(":::AI_RESPONSE:::", "");
+          return `${role}: ${cleanContent}`;
+        })
+        .join('\n');
 
-      // 2. Identify Target Lesson: Find if the user is talking about a specific lesson in current query or history
-      const searchSpace = (userQuery + " " + recentHistory).toLowerCase();
+      // 3. Smart Context Detection
+      // Check if the user is referring to a lesson mentioned in history or the current query
+      const searchContext = `${userQuery} ${recentHistory}`.toLowerCase();
       let targetLesson = lessons.find(l => 
-        searchSpace.includes(l.title.toLowerCase()) || 
-        (l.keywords && l.keywords.some(k => searchSpace.includes(k.toLowerCase())))
+        searchContext.includes(l.title.toLowerCase()) || 
+        (l.keywords && l.keywords.some(k => searchContext.includes(k.toLowerCase())))
       );
 
-      // 3. Prepare Multimodal Parts: Text + Images from files
-      let contentsParts: any[] = [];
-      let lessonContextHeader = "";
+      // 4. Prepare Multimodal Input
+      let contentParts: any[] = [];
+      let lessonContextString = "";
 
       if (targetLesson) {
           const attachments = targetLesson.attachments || [];
-          lessonContextHeader = `[TARGET_LESSON_INFO]
+          const subject = subjects.find(s => s.id === targetLesson.subjectId);
+          
+          lessonContextString = `
+          [FOCUSED_LESSON_DATA]
+          ID: ${targetLesson.id}
+          Subject: ${subject?.name.en || 'General'}
           Title: ${targetLesson.title}
-          Context: ${targetLesson.description}
-          Files Available: ${JSON.stringify(attachments.map(a => a.name))}
-          \n`;
+          Description: ${targetLesson.description}
+          Files: ${JSON.stringify(attachments.map(a => a.name))}
+          (Images from this lesson have been attached for your visual analysis)
+          `;
 
-          // Add images from the lesson so Zay can "read" them
+          // Inject Visual Data for Gemini
           for (const att of attachments) {
-              if (att.type === 'image') {
+              if (att.type === 'image' && att.url) {
                   const b64 = await imageUrlToBase64(att.url);
                   if (b64) {
-                      contentsParts.push({
-                          inlineData: { data: b64.data, mimeType: b64.mimeType }
-                      });
+                      contentParts.push({ inlineData: { data: b64.data, mimeType: b64.mimeType } });
                   }
               }
           }
       }
 
-      // Add the text prompt at the end of the parts
-      contentsParts.push({ text: userQuery });
+      // Add the text prompt last
+      contentParts.push({ text: userQuery });
 
-      const taskContext = items
-        .map(i => `[DATABASE_TASK] ID: ${i.id} | TYPE: ${i.type} | TITLE: ${i.title} | DUE: ${i.date} | NOTES: ${i.notes}`)
-        .join('\n');
+      // 5. Build Database Context for Tasks (Homework/Exams)
+      const pendingTasks = items.filter(i => new Date(i.date) >= new Date(new Date().setDate(new Date().getDate() - 7)));
+      const taskContext = pendingTasks.map(i => 
+          `[DB_TASK] Type:${i.type} | Title:${i.title} | Subject:${subjects.find(s=>s.id===i.subjectId)?.name.en} | Date:${i.date} | Note:${i.notes}`
+      ).join('\n');
 
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
+      // 6. System Instruction (The Brain)
       const systemInstruction = `
-        You are Zay, the brilliant academic assistant for a 1Bac Science Math (SM) student named ${userName}.
-        
-        **CONVERSATION MEMORY (Last 10 turns):**
+        You are Zay, the AI assistant for a specialized "1Bac Science Math" (SM) classroom.
+        User: ${userName}.
+
+        **MEMORY & CONTEXT:**
+        [PREVIOUS CHAT]:
         ${recentHistory}
 
-        **DATABASE CONTEXT:**
-        ${lessonContextHeader}
-        ${taskContext}
+        [DATABASE_ASSIGNMENTS]:
+        ${taskContext || "No active assignments in database."}
 
-        **OPERATIONAL GUIDELINES:**
-        1. **RESUMES (SUMMARIES)**: When asked for a resume, analyze the [TARGET_LESSON_INFO] and any images provided. Images are actual lesson papers/whiteboards. Extract definitions, formulas, and theorems from them to create a high-quality academic summary.
-        2. **EXERCISES vs HOMEWORK**:
-           - If a student says "exercises" or "homework" and it's unclear:
-             ASK: "Would you like me to show the homework the teacher assigned in the database, or should I generate a NEW series of exercises based on the lesson papers I've analyzed?"
-           - If they want the teacher's version, search [DATABASE_TASK].
-           - If they want a generated series, create 3-5 challenging SM-level problems based on the analyzed file content.
-        3. **SMART MEMORY**: If the student says something like "yes", "do it", or "@zay okay," use the CONVERSATION MEMORY to understand the context of the previous turn.
-        4. **SEARCH**: You have access to Google Search. Use it for complex scientific queries or verifying math proofs.
-        5. **FORMATTING**: Use high-quality Markdown. Use math signs (Δ, ∑, ∫, √, α, β, subscripts/superscripts) for professional notation.
+        ${lessonContextString}
 
-        If a specific lesson is found, append ATTACH_FILES::[JSON_ARRAY] to your response.
+        **CORE BEHAVIORS:**
+        1. **VISION & ANALYSIS**: If I provided images of a lesson, I want you to "read" them. If asked for a summary (resume), extract the definitions, theorems, and formulas visible in the images.
+        2. **ROUTER LOGIC (Homework vs Exercises)**:
+           - IF user asks for "Homework" (Devoirs) -> List items from [DATABASE_ASSIGNMENTS].
+           - IF user asks for "Exercises" (Série) ->
+             a) Check [DATABASE_ASSIGNMENTS] first.
+             b) If nothing found, OFFER to generate a new practice series based on the lesson topic/images. Say: "I don't see assigned exercises in the database, but I can generate a custom series for you based on this lesson. Want me to?"
+        3. **MATH RENDERING**:
+           - Use standard unicode symbols: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
+           - For vectors, use bold (e.g., **AB**).
+           - Do NOT use LaTeX code blocks like \`\\[ ... \\]\` or \`$$ ... $$\`. Instead, write inline math naturally.
+           - Example: "Calculate the limit of f(x) as x → +∞".
+        4. **MISSING DATA**:
+           - If the user asks for a specific lesson/file that is NOT in [FOCUSED_LESSON_DATA] and you cannot answer, reply containing the tag: [REPORT_MISSING].
+
+        **TOOLS**: Use Google Search for verifying scientific constants, definitions, or current news.
+
+        **OUTPUT**:
+        - Keep it academic but friendly.
+        - If referring to the focused lesson files, append: ATTACH_FILES::[JSON_ARRAY]
       `;
 
+      // 7. Call Gemini
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: { parts: contentsParts },
+        contents: { parts: contentParts },
         config: { 
           systemInstruction, 
-          temperature: 0.3,
+          temperature: 0.3, // Lower temperature for accurate academic math
           tools: [{ googleSearch: {} }]
         },
       });
@@ -134,13 +160,26 @@ export const aiService = {
       let resources: any[] = [];
       const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
+      // Handle Resource Attachments logic
       if (text.includes("ATTACH_FILES::")) {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
         try {
             resources = JSON.parse(parts[1].trim());
         } catch (e) {
-            console.error("AI resource parsing failed");
+            console.error("AI Resource Parse Error", e);
+        }
+      } 
+      // Fallback: If no explicit attachment tag but we focused a lesson, attach its files implicitly if the user asked for "files" or "document"
+      else if (targetLesson && (userQuery.includes("file") || userQuery.includes("pdf") || userQuery.includes("document"))) {
+         resources = targetLesson.attachments.map(a => ({ name: a.name, url: a.url, type: a.type }));
+      }
+
+      // Handle Missing Data Reporting
+      if (text.includes("[REPORT_MISSING]")) {
+        text = text.replace("[REPORT_MISSING]", "").trim();
+        if (requestingUser) {
+            await supabaseService.createAiLog(requestingUser.id, userQuery);
         }
       }
 
@@ -148,7 +187,7 @@ export const aiService = {
 
     } catch (error) {
       console.error("AI Service Error:", error);
-      return { text: "I'm having a bit of trouble connecting to my database. Could you try asking again?", type: 'text' };
+      return { text: "My brain is momentarily disconnected (Network Error). Please try again.", type: 'text' };
     }
   }
 };
