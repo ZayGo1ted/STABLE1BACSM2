@@ -1,27 +1,26 @@
-
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { User, ChatMessage } from '../types';
 import { supabaseService } from './supabaseService';
 
 interface AiResponse {
   text: string;
   resources?: any[];
-  grounding?: any[];
+  grounding?: any[]; // Groq doesn't have native grounding yet, so this will be empty
   type: 'text' | 'image' | 'file';
 }
 
 /**
- * Helper: Converts remote image URLs to Base64 for Gemini Vision
+ * Helper: Converts remote image URLs to Base64 for Groq Vision
  */
-async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
+async function imageUrlToBase64(url: string): Promise<string | null> {
     try {
         const response = await fetch(url);
         const blob = await response.blob();
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                const base64data = (reader.result as string).split(',')[1];
-                resolve({ data: base64data, mimeType: blob.type });
+                // Return the full data URL (e.g., "data:image/jpeg;base64,.....")
+                resolve(reader.result as string);
             };
             reader.readAsDataURL(blob);
         });
@@ -33,7 +32,7 @@ async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: 
 
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = []): Promise<AiResponse> => {
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.API_KEY; // Make sure this is your GROQ_API_KEY
     
     if (!apiKey) {
       console.error("API_KEY missing");
@@ -41,7 +40,7 @@ export const aiService = {
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const groq = new Groq({ apiKey });
       
       // 1. Fetch Real-time Database State
       const freshState = await supabaseService.fetchFullState();
@@ -54,7 +53,7 @@ export const aiService = {
         .filter(m => !m.mediaUrl || m.mediaUrl.length < 500)
         .slice(-10)
         .map(m => {
-          const role = m.content.startsWith(":::AI_RESPONSE:::") ? "Zay" : "Student";
+          const role = m.content.startsWith(":::AI_RESPONSE:::") ? "Assistant" : "User"; // Standardize roles
           const cleanContent = m.content.replace(":::AI_RESPONSE:::", "");
           return `${role}: ${cleanContent}`;
         })
@@ -67,8 +66,9 @@ export const aiService = {
         (l.keywords && l.keywords.some(k => searchContext.includes(k.toLowerCase())))
       );
 
-      // 4. Prepare Multimodal Input
-      let contentParts: any[] = [];
+      // 4. Prepare Multimodal Input (Groq Vision Format)
+      // Groq expects an array of content parts for the user message
+      let userContentParts: any[] = [];
       let lessonContextString = "";
 
       if (targetLesson) {
@@ -85,17 +85,24 @@ export const aiService = {
           (Visual data from these files is available to you for analysis)
           `;
 
+          // Process images for Vision
           for (const att of attachments) {
               if (att.type === 'image' && att.url) {
-                  const b64 = await imageUrlToBase64(att.url);
-                  if (b64) {
-                      contentParts.push({ inlineData: { data: b64.data, mimeType: b64.mimeType } });
+                  const dataUrl = await imageUrlToBase64(att.url);
+                  if (dataUrl) {
+                      userContentParts.push({
+                          type: "image_url",
+                          image_url: {
+                              url: dataUrl
+                          }
+                      });
                   }
               }
           }
       }
 
-      contentParts.push({ text: userQuery });
+      // Add the text query to the user content parts
+      userContentParts.push({ type: "text", text: userQuery });
 
       // 5. Build Database Context for Tasks
       const pendingTasks = items.filter(i => new Date(i.date) >= new Date(new Date().setDate(new Date().getDate() - 7)));
@@ -119,43 +126,50 @@ export const aiService = {
 
         **RULES:**
         1. **OUTPUT CONTROL (CRITICAL)**:
-           - If user asks for "Exercises" or a "Series": GENERATE the text questions. Do NOT attach the lesson PDF unless explicitly asked (e.g., "give me the file").
-           - If user asks for "The Lesson": Summarize it. Do NOT attach the PDF unless asked.
-           - ONLY use the \`ATTACH_FILES::[...]\` command if the user specifically requested the physical document/file or if the question cannot be answered without sending the file.
+           - If user asks for "Exercises" or a "Series": GENERATE the text questions. Do NOT attach the lesson PDF unless explicitly asked.
+           - If user asks for "The Lesson": Summarize it.
+           - ONLY use the \`ATTACH_FILES::[...]\` command if the user specifically requested the physical file.
 
         2. **ROUTER**:
-           - "Homework" (Devoirs) -> Check [DB_TASK] first.
-           - "Exercises" (Série) -> If no [DB_TASK], generate a custom series based on the analyzed lesson images/context.
+           - "Homework" -> Check [DB_TASK] first.
+           - "Exercises" -> Generate custom series based on lesson context.
 
         3. **MATH**:
            - Use Unicode: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
            - Vectors: **AB**.
-           - No LaTeX blocks like \`$$\`. Use natural inline math.
+           - No LaTeX blocks.
 
         4. **MISSING**:
            - If asked for a file/lesson not in [FOCUSED_LESSON_DATA], reply with [REPORT_MISSING].
 
         **RESPONSE FORMAT**:
         Answer in academic markdown. 
-        If attaching files is absolutely necessary based on the request:
+        If attaching files is absolutely necessary:
         ATTACH_FILES::[{"name": "Filename", "url": "URL", "type": "file"}]
       `;
 
-      // 7. Call Gemini
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: { parts: contentParts },
-        config: { 
-          systemInstruction, 
-          temperature: 0.3, 
-          tools: [{ googleSearch: {} }]
-        },
+      // 7. Call Groq
+      const completion = await groq.chat.completions.create({
+        messages: [
+            {
+                role: "system",
+                content: systemInstruction
+            },
+            {
+                role: "user",
+                content: userContentParts // Contains text + images
+            }
+        ],
+        model: "llama-3.2-90b-vision-preview", // Best Groq model for text + vision
+        temperature: 0.3,
+        max_tokens: 1024,
       });
 
-      let text = (response.text || "").trim();
+      let text = (completion.choices[0]?.message?.content || "").trim();
       let resources: any[] = [];
-      const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const grounding: any[] = []; // Groq does not return grounding metadata like Google
 
+      // Handle File Attachments Parsing
       if (text.includes("ATTACH_FILES::")) {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
@@ -165,11 +179,12 @@ export const aiService = {
             console.error("AI Resource Parse Error", e);
         }
       } 
-      // STRICTER FALLBACK: Only attach if query explicitly asks for files/pdfs, ignoring generic context
+      // STRICTER FALLBACK
       else if (targetLesson && (userQuery.toLowerCase().includes("pdf") || userQuery.toLowerCase().includes("file") || userQuery.toLowerCase().includes("download"))) {
          resources = targetLesson.attachments.map(a => ({ name: a.name, url: a.url, type: a.type }));
       }
 
+      // Handle Missing Reports
       if (text.includes("[REPORT_MISSING]")) {
         text = text.replace("[REPORT_MISSING]", "").trim();
         if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
