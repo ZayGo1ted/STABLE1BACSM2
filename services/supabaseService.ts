@@ -73,7 +73,11 @@ const compressFile = async (file: File): Promise<File> => {
               lastModified: Date.now(),
             });
             
-            console.log(`Compression: ${file.size}B -> ${newFile.size}B (Saved ${Math.round((1 - newFile.size/file.size)*100)}%)`);
+            // Manually clear large variables to help GC on mobile
+            img.src = '';
+            reader.onload = null;
+            
+            console.log(`Compression: ${file.size}B -> ${newFile.size}B`);
             resolve(newFile);
           },
           'image/webp',
@@ -191,7 +195,10 @@ export const supabaseService = {
     });
     
     if (error) throw error;
-    return getSupabase().storage.from('lessons').getPublicUrl(fileName).data.publicUrl;
+    
+    // 3. Get Public URL
+    const { data } = getSupabase().storage.from('lessons').getPublicUrl(fileName);
+    return data.publicUrl;
   },
 
   createAiLog: async (userId: string, query: string) => {
