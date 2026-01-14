@@ -50,9 +50,8 @@ export const aiService = {
       const subjects = freshState.subjects || [];
 
       // 2. Build Conversation Memory (Last 10 turns)
-      // Filter out system messages or complex metadata to keep context clean
       const recentHistory = history
-        .filter(m => !m.mediaUrl || m.mediaUrl.length < 500) // Skip heavy payloads in history
+        .filter(m => !m.mediaUrl || m.mediaUrl.length < 500)
         .slice(-10)
         .map(m => {
           const role = m.content.startsWith(":::AI_RESPONSE:::") ? "Zay" : "Student";
@@ -62,7 +61,6 @@ export const aiService = {
         .join('\n');
 
       // 3. Smart Context Detection
-      // Check if the user is referring to a lesson mentioned in history or the current query
       const searchContext = `${userQuery} ${recentHistory}`.toLowerCase();
       let targetLesson = lessons.find(l => 
         searchContext.includes(l.title.toLowerCase()) || 
@@ -83,11 +81,10 @@ export const aiService = {
           Subject: ${subject?.name.en || 'General'}
           Title: ${targetLesson.title}
           Description: ${targetLesson.description}
-          Files: ${JSON.stringify(attachments.map(a => a.name))}
-          (Images from this lesson have been attached for your visual analysis)
+          Files: ${JSON.stringify(attachments.map(a => ({ name: a.name, type: a.type, url: a.url })))}
+          (Visual data from these files is available to you for analysis)
           `;
 
-          // Inject Visual Data for Gemini
           for (const att of attachments) {
               if (att.type === 'image' && att.url) {
                   const b64 = await imageUrlToBase64(att.url);
@@ -98,10 +95,9 @@ export const aiService = {
           }
       }
 
-      // Add the text prompt last
       contentParts.push({ text: userQuery });
 
-      // 5. Build Database Context for Tasks (Homework/Exams)
+      // 5. Build Database Context for Tasks
       const pendingTasks = items.filter(i => new Date(i.date) >= new Date(new Date().setDate(new Date().getDate() - 7)));
       const taskContext = pendingTasks.map(i => 
           `[DB_TASK] Type:${i.type} | Title:${i.title} | Subject:${subjects.find(s=>s.id===i.subjectId)?.name.en} | Date:${i.date} | Note:${i.notes}`
@@ -109,40 +105,40 @@ export const aiService = {
 
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
-      // 6. System Instruction (The Brain)
+      // 6. System Instruction
       const systemInstruction = `
-        You are Zay, the AI assistant for a specialized "1Bac Science Math" (SM) classroom.
+        You are Zay, the AI assistant for 1Bac Science Math.
         User: ${userName}.
 
-        **MEMORY & CONTEXT:**
-        [PREVIOUS CHAT]:
+        **MEMORY:**
         ${recentHistory}
 
-        [DATABASE_ASSIGNMENTS]:
-        ${taskContext || "No active assignments in database."}
-
+        **DATA:**
+        ${taskContext || "No active DB tasks."}
         ${lessonContextString}
 
-        **CORE BEHAVIORS:**
-        1. **VISION & ANALYSIS**: If I provided images of a lesson, I want you to "read" them. If asked for a summary (resume), extract the definitions, theorems, and formulas visible in the images.
-        2. **ROUTER LOGIC (Homework vs Exercises)**:
-           - IF user asks for "Homework" (Devoirs) -> List items from [DATABASE_ASSIGNMENTS].
-           - IF user asks for "Exercises" (Série) ->
-             a) Check [DATABASE_ASSIGNMENTS] first.
-             b) If nothing found, OFFER to generate a new practice series based on the lesson topic/images. Say: "I don't see assigned exercises in the database, but I can generate a custom series for you based on this lesson. Want me to?"
-        3. **MATH RENDERING**:
-           - Use standard unicode symbols: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
-           - For vectors, use bold (e.g., **AB**).
-           - Do NOT use LaTeX code blocks like \`\\[ ... \\]\` or \`$$ ... $$\`. Instead, write inline math naturally.
-           - Example: "Calculate the limit of f(x) as x → +∞".
-        4. **MISSING DATA**:
-           - If the user asks for a specific lesson/file that is NOT in [FOCUSED_LESSON_DATA] and you cannot answer, reply containing the tag: [REPORT_MISSING].
+        **RULES:**
+        1. **OUTPUT CONTROL (CRITICAL)**:
+           - If user asks for "Exercises" or a "Series": GENERATE the text questions. Do NOT attach the lesson PDF unless explicitly asked (e.g., "give me the file").
+           - If user asks for "The Lesson": Summarize it. Do NOT attach the PDF unless asked.
+           - ONLY use the \`ATTACH_FILES::[...]\` command if the user specifically requested the physical document/file or if the question cannot be answered without sending the file.
 
-        **TOOLS**: Use Google Search for verifying scientific constants, definitions, or current news.
+        2. **ROUTER**:
+           - "Homework" (Devoirs) -> Check [DB_TASK] first.
+           - "Exercises" (Série) -> If no [DB_TASK], generate a custom series based on the analyzed lesson images/context.
 
-        **OUTPUT**:
-        - Keep it academic but friendly.
-        - If referring to the focused lesson files, append: ATTACH_FILES::[JSON_ARRAY]
+        3. **MATH**:
+           - Use Unicode: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
+           - Vectors: **AB**.
+           - No LaTeX blocks like \`$$\`. Use natural inline math.
+
+        4. **MISSING**:
+           - If asked for a file/lesson not in [FOCUSED_LESSON_DATA], reply with [REPORT_MISSING].
+
+        **RESPONSE FORMAT**:
+        Answer in academic markdown. 
+        If attaching files is absolutely necessary based on the request:
+        ATTACH_FILES::[{"name": "Filename", "url": "URL", "type": "file"}]
       `;
 
       // 7. Call Gemini
@@ -151,7 +147,7 @@ export const aiService = {
         contents: { parts: contentParts },
         config: { 
           systemInstruction, 
-          temperature: 0.3, // Lower temperature for accurate academic math
+          temperature: 0.3, 
           tools: [{ googleSearch: {} }]
         },
       });
@@ -160,7 +156,6 @@ export const aiService = {
       let resources: any[] = [];
       const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
-      // Handle Resource Attachments logic
       if (text.includes("ATTACH_FILES::")) {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
@@ -170,24 +165,21 @@ export const aiService = {
             console.error("AI Resource Parse Error", e);
         }
       } 
-      // Fallback: If no explicit attachment tag but we focused a lesson, attach its files implicitly if the user asked for "files" or "document"
-      else if (targetLesson && (userQuery.includes("file") || userQuery.includes("pdf") || userQuery.includes("document"))) {
+      // STRICTER FALLBACK: Only attach if query explicitly asks for files/pdfs, ignoring generic context
+      else if (targetLesson && (userQuery.toLowerCase().includes("pdf") || userQuery.toLowerCase().includes("file") || userQuery.toLowerCase().includes("download"))) {
          resources = targetLesson.attachments.map(a => ({ name: a.name, url: a.url, type: a.type }));
       }
 
-      // Handle Missing Data Reporting
       if (text.includes("[REPORT_MISSING]")) {
         text = text.replace("[REPORT_MISSING]", "").trim();
-        if (requestingUser) {
-            await supabaseService.createAiLog(requestingUser.id, userQuery);
-        }
+        if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
       }
 
       return { text, resources, grounding, type: 'text' };
 
     } catch (error) {
       console.error("AI Service Error:", error);
-      return { text: "My brain is momentarily disconnected (Network Error). Please try again.", type: 'text' };
+      return { text: "Network hiccup. Try again.", type: 'text' };
     }
   }
 };
