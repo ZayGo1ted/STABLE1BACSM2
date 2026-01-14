@@ -5,7 +5,8 @@ import { useAuth } from '../AuthContext';
 import { supabaseService } from '../services/supabaseService';
 import { 
   Plus, Edit2, X, UploadCloud, Save, CheckCircle, RefreshCw, 
-  Book, Calendar, Brain, Trash2, AlertCircle, Search 
+  Book, Calendar, Brain, Trash2, AlertCircle, Search, 
+  ArrowUp, ArrowDown, File as FileIcon, Image as ImageIcon, Video
 } from 'lucide-react';
 import { SUBJECT_ICONS } from '../constants';
 
@@ -16,6 +17,16 @@ interface Props {
   initialEditItem?: AcademicItem | null;
   initialEditLesson?: Lesson | null;
   onEditHandled?: () => void;
+}
+
+// Helper type for managing files before they are uploaded
+interface StagedAttachment {
+  id: string; // Temp ID for React keys
+  file?: File; // Present if it's a new upload
+  url: string; // Blob URL for preview (new) or Remote URL (existing)
+  name: string;
+  type: 'image' | 'video' | 'file';
+  isExisting: boolean;
 }
 
 const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditItem, initialEditLesson, onEditHandled }) => {
@@ -36,11 +47,14 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [lessonFormData, setLessonFormData] = useState<Partial<Lesson>>({
     title: '', subjectId: subjects[0]?.id || '', type: 'lesson',
-    description: '', aiMetadata: '', keywords: [], isPublished: true, attachments: [],
+    description: '', aiMetadata: '', keywords: [], isPublished: true,
     date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '10:00'
   });
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  
+  // New Staging State for Files
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
   const [isUploadingLesson, setIsUploadingLesson] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Logs State
@@ -58,9 +72,7 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
     }
     if (initialEditLesson) {
       setActiveTab('lessons');
-      setLessonFormData({ ...initialEditLesson });
-      setEditingLessonId(initialEditLesson.id);
-      setIsLessonFormOpen(true);
+      loadLessonForEdit(initialEditLesson);
       if (onEditHandled) onEditHandled();
     }
   }, [initialEditItem, initialEditLesson]);
@@ -81,10 +93,27 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
 
   const resetLessonForm = () => {
     setEditingLessonId(null);
-    setLessonFormData({ title: '', subjectId: subjects[0]?.id || '', type: 'lesson', description: '', aiMetadata: '', keywords: [], isPublished: true, attachments: [], date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '10:00' });
-    setSelectedFiles([]);
+    setLessonFormData({ title: '', subjectId: subjects[0]?.id || '', type: 'lesson', description: '', aiMetadata: '', keywords: [], isPublished: true, date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '10:00' });
+    setStagedAttachments([]);
     setUploadError(null);
+    setUploadProgress('');
     setIsLessonFormOpen(false);
+  };
+
+  const loadLessonForEdit = (lesson: Lesson) => {
+    setEditingLessonId(lesson.id);
+    setLessonFormData({ ...lesson });
+    
+    // Convert existing attachments to staged format
+    const existing = (lesson.attachments || []).map((att, idx) => ({
+        id: `existing-${idx}`,
+        url: att.url,
+        name: att.name,
+        type: att.type,
+        isExisting: true
+    }));
+    setStagedAttachments(existing);
+    setIsLessonFormOpen(true);
   };
 
   // --- Handlers ---
@@ -123,44 +152,106 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
     } catch (err) { alert("Error saving task."); }
   };
 
+  // --- Lesson File Handling ---
+
+  const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+        const newFiles = Array.from(e.target.files).map(file => ({
+            id: `new-${crypto.randomUUID()}`,
+            file: file,
+            url: URL.createObjectURL(file), // Create local preview URL
+            name: file.name,
+            type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file',
+            isExisting: false
+        } as StagedAttachment));
+        
+        setStagedAttachments(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setStagedAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const moveAttachment = (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= stagedAttachments.length) return;
+    
+    setStagedAttachments(prev => {
+        const copy = [...prev];
+        const [removed] = copy.splice(index, 1);
+        copy.splice(newIndex, 0, removed);
+        return copy;
+    });
+  };
+
   const handleLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!lessonFormData.title) return;
+    
     setIsUploadingLesson(true);
     setUploadError(null);
-    try {
-      const newAttachments: LessonAttachment[] = [];
-      for (const file of selectedFiles) {
-        const url = await supabaseService.uploadFile(file);
-        const type = file.type.startsWith('image') ? 'image' : file.type.startsWith('video') ? 'video' : 'file';
-        newAttachments.push({ name: file.name, url, type });
-      }
+    setUploadProgress(t('upload_start') || 'Preparing...');
 
-      const finalAttachments = [...(lessonFormData.attachments || []), ...newAttachments];
-      
-      const lesson: Lesson = {
-        id: editingLessonId || crypto.randomUUID(),
-        title: lessonFormData.title || 'Untitled',
-        subjectId: lessonFormData.subjectId || subjects[0]?.id || '',
-        type: lessonFormData.type as any,
-        description: lessonFormData.description || '',
-        aiMetadata: lessonFormData.aiMetadata || '',
-        attachments: finalAttachments,
-        date: lessonFormData.date || '',
-        startTime: lessonFormData.startTime || '',
-        endTime: lessonFormData.endTime || '',
-        keywords: lessonFormData.keywords || [],
-        isPublished: lessonFormData.isPublished !== false,
-        createdAt: editingLessonId ? (lessonFormData.createdAt || new Date().toISOString()) : new Date().toISOString()
-      };
-      
-      if (editingLessonId) await supabaseService.updateLesson(lesson);
-      else await supabaseService.createLesson(lesson);
-      
-      alert(t('upload_success'));
-      window.location.reload(); 
-    } catch (err: any) { 
-        setUploadError("Action Failed: " + err.message); 
-    } finally { setIsUploadingLesson(false); }
+    try {
+        const finalAttachments: LessonAttachment[] = [];
+        
+        // Process attachments sequentially to prevent memory crash on mobile
+        for (let i = 0; i < stagedAttachments.length; i++) {
+            const item = stagedAttachments[i];
+            
+            if (item.isExisting) {
+                // Keep existing attachment
+                finalAttachments.push({ name: item.name, url: item.url, type: item.type });
+            } else if (item.file) {
+                // Upload new file
+                setUploadProgress(`${t('uploading') || 'Uploading'} ${i + 1}/${stagedAttachments.length}: ${item.name}...`);
+                const publicUrl = await supabaseService.uploadFile(item.file);
+                finalAttachments.push({ name: item.name, url: publicUrl, type: item.type });
+            }
+        }
+
+        setUploadProgress('Finalizing...');
+
+        const lesson: Lesson = {
+            id: editingLessonId || crypto.randomUUID(),
+            title: lessonFormData.title || 'Untitled',
+            subjectId: lessonFormData.subjectId || subjects[0]?.id || '',
+            type: lessonFormData.type as any,
+            description: lessonFormData.description || '',
+            aiMetadata: lessonFormData.aiMetadata || '',
+            attachments: finalAttachments,
+            date: lessonFormData.date || '',
+            startTime: lessonFormData.startTime || '',
+            endTime: lessonFormData.endTime || '',
+            keywords: lessonFormData.keywords || [],
+            isPublished: lessonFormData.isPublished !== false,
+            createdAt: editingLessonId ? (lessonFormData.createdAt || new Date().toISOString()) : new Date().toISOString()
+        };
+
+        if (editingLessonId) {
+            await supabaseService.updateLesson(lesson);
+            // Optimistic update without reload
+            // But we need to update the parent state properly
+            // Ideally fetchFullState or manual merge
+            const { lessons } = await supabaseService.fetchFullState(); // Fetch fresh to be safe or just local merge
+            onUpdate({ lessons: lessons });
+        } else {
+            await supabaseService.createLesson(lesson);
+            const { lessons } = await supabaseService.fetchFullState();
+            onUpdate({ lessons: lessons });
+        }
+
+        resetLessonForm();
+        alert(t('upload_success'));
+        
+    } catch (err: any) {
+        console.error(err);
+        setUploadError(err.message || "Upload Failed");
+    } finally {
+        setIsUploadingLesson(false);
+        setUploadProgress('');
+    }
   };
 
   const fetchLogs = async () => {
@@ -326,7 +417,7 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
                         <button onClick={resetLessonForm} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors"><X size={20}/></button>
                    </div>
                    {uploadError && (
-                     <div className="p-4 bg-rose-50 border-2 border-rose-100 rounded-2xl flex items-start gap-3 mb-6">
+                     <div className="p-4 bg-rose-50 border-2 border-rose-100 rounded-2xl flex items-start gap-3 mb-6 animate-in fade-in">
                        <AlertCircle className="text-rose-600 shrink-0" size={20} />
                        <div className="space-y-1">
                          <p className="text-rose-900 font-black text-xs uppercase tracking-tight">{t('upload_fail')}</p>
@@ -364,32 +455,74 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
                           <textarea className="w-full bg-slate-50 border-slate-200 border rounded-xl px-4 py-3 font-bold text-sm outline-none focus:border-emerald-500 min-h-[100px]" value={lessonFormData.description} onChange={e => setLessonFormData({...lessonFormData, description: e.target.value})} />
                        </div>
 
-                       <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{t('attachments')}</label>
-                          <div className="grid gap-2">
-                             {(lessonFormData.attachments || []).map((att, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                   <span className="text-xs font-bold text-slate-600 truncate">{att.name}</span>
-                                   <button type="button" onClick={() => setLessonFormData({...lessonFormData, attachments: lessonFormData.attachments?.filter((_, idx) => idx !== i)})} className="text-rose-500"><Trash2 size={16}/></button>
+                       {/* File Staging & Reordering */}
+                       <div className="space-y-2">
+                          <div className="flex justify-between items-end">
+                              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{t('attachments')}</label>
+                              <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{stagedAttachments.length} files</span>
+                          </div>
+                          
+                          <div className="space-y-2">
+                             {stagedAttachments.map((att, i) => (
+                                <div key={att.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200 group animate-in slide-in-from-left-2">
+                                   {/* Order Controls */}
+                                   <div className="flex flex-col gap-1">
+                                       <button type="button" onClick={() => moveAttachment(i, 'up')} disabled={i === 0} className="p-1 rounded bg-white hover:bg-slate-200 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowUp size={10} /></button>
+                                       <button type="button" onClick={() => moveAttachment(i, 'down')} disabled={i === stagedAttachments.length - 1} className="p-1 rounded bg-white hover:bg-slate-200 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowDown size={10} /></button>
+                                   </div>
+                                   
+                                   {/* Preview */}
+                                   <div className="w-12 h-12 shrink-0 bg-white rounded-lg border border-slate-100 flex items-center justify-center overflow-hidden">
+                                       {att.type === 'image' ? (
+                                           <img src={att.url} alt="preview" className="w-full h-full object-cover" />
+                                       ) : att.type === 'video' ? (
+                                           <Video size={20} className="text-slate-400"/>
+                                       ) : (
+                                           <FileIcon size={20} className="text-slate-400"/>
+                                       )}
+                                   </div>
+
+                                   {/* Info */}
+                                   <div className="min-w-0 flex-1">
+                                       <p className="text-xs font-black text-slate-700 truncate">{att.name}</p>
+                                       <div className="flex gap-2">
+                                           <span className={`text-[8px] uppercase font-bold px-1 rounded ${att.isExisting ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                               {att.isExisting ? 'Saved' : 'New'}
+                                           </span>
+                                           <span className="text-[8px] uppercase font-bold text-slate-400">{att.type}</span>
+                                       </div>
+                                   </div>
+
+                                   {/* Remove */}
+                                   <button type="button" onClick={() => removeAttachment(att.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={16}/></button>
                                 </div>
                              ))}
+
+                             {/* Add Button */}
                              <div className="p-6 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 text-center hover:bg-slate-100 transition-colors cursor-pointer relative">
-                                <input type="file" multiple className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => { if(e.target.files) setSelectedFiles([...selectedFiles, ...Array.from(e.target.files)]); }} />
+                                <input type="file" multiple className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFilesSelect} />
                                 <div className="pointer-events-none">
                                     <UploadCloud className="mx-auto text-slate-400 mb-2" />
                                     <p className="text-[10px] font-black text-slate-400 uppercase">{t('click_upload')}</p>
                                 </div>
                              </div>
-                             {selectedFiles.length > 0 && (
-                                <div className="text-center text-xs font-bold text-emerald-600 mt-2">{selectedFiles.length} {t('files_pending')}</div>
-                             )}
                           </div>
                        </div>
 
-                       <button type="submit" disabled={isUploadingLesson} className="w-full py-4 text-white font-black rounded-2xl shadow-lg bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                          {isUploadingLesson ? <RefreshCw className="animate-spin" size={20}/> : <Save size={20} />}
-                          {isUploadingLesson ? 'Uploading...' : t('save')}
-                       </button>
+                       {/* Upload Status / Button */}
+                       <div className="space-y-2">
+                           {isUploadingLesson && (
+                               <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center gap-3 animate-pulse">
+                                   <RefreshCw className="animate-spin text-emerald-600" size={16} />
+                                   <span className="text-xs font-bold text-emerald-700">{uploadProgress}</span>
+                               </div>
+                           )}
+                           
+                           <button type="submit" disabled={isUploadingLesson} className="w-full py-4 text-white font-black rounded-2xl shadow-lg bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                              {isUploadingLesson ? <RefreshCw className="animate-spin" size={20}/> : <Save size={20} />}
+                              {isUploadingLesson ? 'Processing...' : t('save')}
+                           </button>
+                       </div>
                    </form>
                 </div>
             )}
