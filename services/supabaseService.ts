@@ -17,11 +17,13 @@ export const getSupabase = () => {
 
 /**
  * Compression Utility
- * Optimized for Mobile PWA:
- * 1. Max width 1600px (Balance between quality and RAM usage)
- * 2. Aggressive cleanup of canvas/image objects
+ * HEAVILY Optimized for Mobile Stability:
+ * 1. Max width 1280px (720p class) - indistinguishable on phones, massive RAM saving.
+ * 2. Quality 0.6 (60%) - Sweet spot for text/notes legibility vs size.
+ * 3. Aggressive GC hints.
  */
 const compressFile = async (file: File): Promise<File> => {
+  // Pass through non-images
   if (!file.type.startsWith('image/')) return file;
   if (file.type.includes('svg') || file.type.includes('gif')) return file;
 
@@ -37,8 +39,8 @@ const compressFile = async (file: File): Promise<File> => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // 1600px is safer for mobile memory than 1920px
-        const MAX_WIDTH = 1600; 
+        // 1280px is the safe limit for mid-range phones processing multiple files
+        const MAX_WIDTH = 1280; 
         let width = img.width;
         let height = img.height;
 
@@ -50,7 +52,12 @@ const compressFile = async (file: File): Promise<File> => {
         canvas.width = width;
         canvas.height = height;
         
-        ctx?.drawImage(img, 0, 0, width, height);
+        // Better interpolation for text clarity
+        if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'medium';
+            ctx.drawImage(img, 0, 0, width, height);
+        }
 
         canvas.toBlob(
           (blob) => {
@@ -70,14 +77,15 @@ const compressFile = async (file: File): Promise<File> => {
               lastModified: Date.now(),
             });
             
-            console.log(`Compressed: ${(file.size/1024/1024).toFixed(2)}MB -> ${(newFile.size/1024/1024).toFixed(2)}MB`);
+            console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB -> ${(newFile.size/1024).toFixed(0)}KB`);
             resolve(newFile);
           },
           'image/webp',
-          0.75 
+          0.60 // 60% quality is sufficient for notes
         );
       };
       
+      // Safety fallbacks
       img.onerror = () => resolve(file);
     };
     reader.onerror = () => resolve(file);
@@ -147,7 +155,7 @@ export const supabaseService = {
       id: lesson.id, title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, ai_metadata: lesson.aiMetadata,
       attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished 
     }]);
-    if (error) throw error; // Throw to UI
+    if (error) throw error;
   },
 
   updateLesson: async (lesson: Lesson) => {
@@ -155,7 +163,7 @@ export const supabaseService = {
       title: lesson.title, subject_id: lesson.subjectId, type: lesson.type, description: lesson.description, ai_metadata: lesson.aiMetadata,
       attachments: lesson.attachments, date_written: lesson.date, start_time: lesson.startTime, end_time: lesson.endTime, keywords: lesson.keywords, is_published: lesson.isPublished
     }).eq('id', lesson.id);
-    if (error) throw error; // Throw to UI
+    if (error) throw error;
   },
   
   deleteLesson: async (id: string) => {
@@ -182,7 +190,7 @@ export const supabaseService = {
     // 1. Compress
     const processedFile = await compressFile(file);
 
-    // 2. Sanitize Filename (Critical for Supabase Storage)
+    // 2. Sanitize
     const cleanName = processedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_').substring(0, 50);
     const fileName = `${Date.now()}_${cleanName}`;
     
@@ -194,7 +202,7 @@ export const supabaseService = {
     
     if (error) throw error;
     
-    // 4. Return Public URL
+    // 4. Return
     const { data } = getSupabase().storage.from('lessons').getPublicUrl(fileName);
     return { url: data.publicUrl, size: processedFile.size };
   },
