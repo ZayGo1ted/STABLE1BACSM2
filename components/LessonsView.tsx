@@ -19,7 +19,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to delete this lesson permanently?")) {
+    if (confirm(t('delete_confirm'))) {
         try {
             const { error } = await supabaseService.deleteLesson(id);
             if (error) throw error;
@@ -74,14 +74,14 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
     <div className="space-y-6 animate-in fade-in duration-700 pb-20" onClick={() => setActiveMenu(null)}>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Lesson Library</h1>
-          <p className="text-slate-500 font-bold text-sm">Access course materials, summaries, and exercises.</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">{t('lesson_library')}</h1>
+          <p className="text-slate-500 font-bold text-sm">{t('access_materials')}</p>
         </div>
         <div className="relative w-full md:w-64">
           <Search size={18} className="absolute left-4 top-3.5 text-slate-400" />
           <input 
             type="text" 
-            placeholder="Search lessons..." 
+            placeholder={t('search_lessons')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-2xl pl-12 pr-4 py-3 font-bold text-sm outline-none focus:border-indigo-500 transition-colors shadow-sm"
@@ -94,7 +94,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
         <button onClick={() => scroll(200)} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg border border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex"><ChevronRight size={20}/></button>
         
         <div ref={scrollRef} className="flex gap-3 overflow-x-auto hide-scrollbar py-4 px-1 snap-x snap-mandatory">
-            <button onClick={() => setSelectedSubjectId('all')} className={`snap-start flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border-2 ${selectedSubjectId === 'all' ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300 shadow-sm'}`}><Filter size={14} /> All</button>
+            <button onClick={() => setSelectedSubjectId('all')} className={`snap-start flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border-2 ${selectedSubjectId === 'all' ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300 shadow-sm'}`}><Filter size={14} /> {t('all')}</button>
             {state.subjects.map(subj => (
             <button key={subj.id} onClick={() => setSelectedSubjectId(subj.id)} className={`snap-start flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap border-2 ${selectedSubjectId === subj.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl scale-105' : 'bg-white text-slate-400 border-slate-100 hover:border-indigo-200 shadow-sm'}`}>{subj.name[lang]}</button>
             ))}
@@ -104,7 +104,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
       {Object.keys(groupedLessons).length === 0 ? (
         <div className="text-center py-20 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
            <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
-           <h3 className="text-slate-400 font-black uppercase tracking-widest">No lessons found</h3>
+           <h3 className="text-slate-400 font-black uppercase tracking-widest">{t('no_results')}</h3>
            <p className="text-slate-400 text-xs mt-1">Try adjusting your search filters</p>
         </div>
       ) : (
@@ -138,10 +138,10 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                                 {activeMenu === lesson.id && (
                                     <div className="absolute right-0 mt-2 w-32 bg-white rounded-xl shadow-xl border border-slate-100 py-2 animate-in fade-in zoom-in-95">
                                         <button onClick={(e) => { e.stopPropagation(); handleEdit(lesson); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600 flex items-center gap-2">
-                                            <Edit2 size={12}/> Edit
+                                            <Edit2 size={12}/> {t('edit')}
                                         </button>
                                         <button onClick={(e) => { e.stopPropagation(); handleDelete(lesson.id); }} className="w-full text-left px-4 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2">
-                                            <Trash2 size={12}/> Delete
+                                            <Trash2 size={12}/> {t('delete')}
                                         </button>
                                     </div>
                                 )}
@@ -175,7 +175,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                             {lesson.startTime && lesson.endTime && (
                               <div className="flex items-center gap-2 text-slate-500 text-[10px] font-bold bg-slate-50 p-2 rounded-lg">
                                 <Clock size={12} className="text-indigo-500" />
-                                <span>Written: {lesson.startTime} - {lesson.endTime}</span>
+                                <span>{t('from')} {lesson.startTime} {t('to')} {lesson.endTime}</span>
                               </div>
                             )}
 
@@ -196,7 +196,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                                 ) : (
                                     lesson.fileUrl && (
                                         <a href={lesson.fileUrl} target="_blank" className="flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-lg shadow-slate-200 w-full">
-                                            Download Main File
+                                            {t('download_main')}
                                         </a>
                                     )
                                 )}
