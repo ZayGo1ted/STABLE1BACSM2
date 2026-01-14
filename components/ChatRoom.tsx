@@ -104,12 +104,14 @@ const ChatRoom: React.FC = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
-    } catch (error) { window.open(url, '_blank'); }
+    } catch (error) { 
+      window.open(url, '_blank'); 
+    }
   };
 
   const handleDownloadAll = (resources: any[]) => {
     resources.forEach((res, i) => {
-      setTimeout(() => forceDownload(res.url, res.name), i * 500);
+      setTimeout(() => forceDownload(res.url, res.name), i * 600);
     });
   };
 
@@ -210,7 +212,7 @@ const ChatRoom: React.FC = () => {
                             </div>
                             {resources.length > 1 && (
                                 <button onClick={() => handleDownloadAll(resources)} className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm">
-                                    <Download size={14} /> Download All ({resources.length})
+                                    <Download size={14} /> {t('download_all') || 'Download All'} ({resources.length})
                                 </button>
                             )}
                         </div>
@@ -229,9 +231,9 @@ const ChatRoom: React.FC = () => {
 
       {/* Universal Lightbox for Chat */}
       {lightboxImage && (
-        <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
-            {/* Shifted header down for mobile to avoid clash with main app menu */}
-            <div className="flex justify-between items-center p-6 md:p-8 text-white border-b border-white/5 pt-16 md:pt-8">
+        <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
+            {/* Lowered header for mobile to avoid clash with browser or app bars */}
+            <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-20 md:pt-10">
                 <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Preview Attachment</span>
                     <span className="text-sm md:text-base font-bold truncate max-w-[160px] md:max-w-md">{lightboxImage.name}</span>
@@ -246,15 +248,16 @@ const ChatRoom: React.FC = () => {
                     <button 
                         onClick={() => setLightboxImage(null)} 
                         className="p-3 bg-white/10 hover:bg-rose-600 rounded-xl md:rounded-2xl border border-white/10 transition-all shadow-xl active:scale-95"
+                        title="Close"
                     >
-                        <X size={20} />
+                        <X size={24} />
                     </button>
                 </div>
             </div>
             <div className="flex-1 flex items-center justify-center p-4 md:p-10 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
                 <img 
                     src={lightboxImage.url} 
-                    className="max-w-full max-h-[75vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
+                    className="max-w-full max-h-[70vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
                     onClick={e => e.stopPropagation()} 
                 />
             </div>
