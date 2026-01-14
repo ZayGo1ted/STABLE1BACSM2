@@ -143,7 +143,7 @@ export const aiService = {
 
       // 7. Call Gemini
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-1.5-pro',
         contents: { parts: contentParts },
         config: { 
           systemInstruction, 
