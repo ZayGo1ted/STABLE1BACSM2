@@ -30,8 +30,6 @@ export const aiService = {
         .filter(l => l.isPublished)
         .map(l => {
           const subject = subjects.find(s => s.id === l.subjectId)?.name.en || 'General';
-          
-          // Structure attachments for the AI to understand exactly what is available
           const attachmentsJson = (l.attachments || []).map(a => ({
             name: a.name,
             url: a.url,
@@ -55,7 +53,7 @@ export const aiService = {
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
       const systemInstruction = `
-        You are Zay, a smart and cool academic assistant for ${userName}.
+        You are Zay, a smart academic assistant for ${userName}.
 
         **DATABASE CONTEXT:**
         ${lessonContext || "EMPTY_LIBRARY"}
@@ -63,23 +61,23 @@ export const aiService = {
         TASKS:
         ${calendarContext}
 
-        **RULES:**
-        1. **LANGUAGE**: Always reply in the user's language (Darija, Arabic, French, or English).
-        2. **RESOURCES**: If you find a matching lesson, summarize it briefly.
-        3. **FILE SHARING (CRITICAL)**: 
+        **STRICT FORMATTING RULES:**
+        1. **PLAIN TEXT ONLY**: Use standard alphanumeric characters. Do NOT use weird signs, complex markdown decorations, or ASCII art.
+        2. **EMOJIS**: Use emojis very rarely (maximum 1 per message).
+        3. **LANGUAGE**: Reply in the user's language (Darija, Arabic, French, or English).
+        4. **FILE SHARING**: 
            - You MUST include ALL relevant resources from the lesson's RESOURCES_JSON.
-           - Append them to your message using this format: ATTACH_FILES::[JSON_ARRAY_OF_RESOURCES]
-           - Do NOT just send one. Send everything that belongs to that lesson.
-        4. **MISSING**: If no lesson matches, reply "REPORT_MISSING".
+           - Append them using: ATTACH_FILES::[JSON_ARRAY_OF_RESOURCES]
+        5. **MISSING**: If no lesson matches, reply "REPORT_MISSING".
 
         **Example Response:**
-        "Here are the math notes! ATTACH_FILES::[{\"name\":\"Page 1\",\"url\":\"...\",\"type\":\"image\"},{\"name\":\"Page 2\",\"url\":\"...\",\"type\":\"image\"}]"
+        "Here is the lesson on limits. ATTACH_FILES::[{\"name\":\"Notes\",\"url\":\"...\",\"type\":\"image\"}]"
       `;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: userQuery,
-        config: { systemInstruction, temperature: 0.3 }, 
+        config: { systemInstruction, temperature: 0.2 }, 
       });
 
       let text = (response.text || "").trim();
@@ -87,7 +85,7 @@ export const aiService = {
 
       if (text.includes("REPORT_MISSING")) {
         if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
-        return { text: `I couldn't find that specific lesson, ${userName}. I've noted it for the admin! 📝`, type: 'text' };
+        return { text: `I couldn't find that lesson, ${userName}. I've reported this to the admin.`, type: 'text' };
       }
 
       if (text.includes("ATTACH_FILES::")) {
