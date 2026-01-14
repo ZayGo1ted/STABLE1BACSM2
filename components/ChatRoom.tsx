@@ -9,29 +9,55 @@ import {
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bot, AlertTriangle, Download, Loader2,
-  ChevronRight, CornerUpLeft
+  ChevronRight, CornerUpLeft, Terminal
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
 const AI_PREFIX = ":::AI_RESPONSE:::";
 
+/**
+ * Advanced Message Formatter
+ * Supports: Bold, Code Blocks, Inline Code, and Math Symbols
+ */
 const formatMessageContent = (text: string) => {
-  return text.split('\n').map((line, lineIdx) => (
-    <div key={lineIdx} className="min-h-[1.2em]">
-      {line.split(/(\*\*.*?\*\*|\[.*?\]\(.*?\)|@\S+|https?:\/\/\S+)/g).map((part, partIdx) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={partIdx} className="font-black text-slate-900">{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith('@')) {
-          return <span key={partIdx} className="font-bold text-indigo-600 bg-indigo-50 px-1 rounded mx-0.5 text-[10px]">{part}</span>;
-        }
-        if (part.match(/^https?:\/\//)) {
-             return <a key={partIdx} href={part} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline truncate block">{part}</a>;
-        }
-        return <span key={partIdx}>{part}</span>;
-      })}
-    </div>
-  ));
+  // 1. Handle Code Blocks
+  const codeBlockRegex = /```([\s\S]*?)```/g;
+  const parts = text.split(codeBlockRegex);
+  
+  return parts.map((part, idx) => {
+    // Every odd index is a code block due to split
+    if (idx % 2 === 1) {
+      return (
+        <div key={idx} className="my-3 bg-slate-900 rounded-xl p-4 font-mono text-[11px] text-emerald-400 overflow-x-auto shadow-inner border border-white/10">
+          <div className="flex items-center gap-2 mb-2 opacity-50 text-[9px] uppercase font-black tracking-widest text-white border-b border-white/5 pb-2">
+            <Terminal size={10} /> Output Block
+          </div>
+          <pre className="whitespace-pre-wrap leading-relaxed">{part.trim()}</pre>
+        </div>
+      );
+    }
+
+    // 2. Handle standard text formatting within this part
+    return (
+      <div key={idx} className="whitespace-pre-wrap leading-relaxed">
+        {part.split(/(\*\*.*?\*\*|`.*?`|https?:\/\/\S+)/g).map((subPart, subIdx) => {
+          // Bold
+          if (subPart.startsWith('**') && subPart.endsWith('**')) {
+            return <strong key={subIdx} className="font-black text-slate-900 bg-black/5 px-0.5 rounded">{subPart.slice(2, -2)}</strong>;
+          }
+          // Inline Code / Math Terms
+          if (subPart.startsWith('`') && subPart.endsWith('`')) {
+            return <code key={subIdx} className="bg-slate-100 text-indigo-600 px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold mx-0.5 border border-slate-200">{subPart.slice(1, -1)}</code>;
+          }
+          // URLs
+          if (subPart.match(/^https?:\/\//)) {
+            return <a key={subIdx} href={subPart} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-bold break-all">{subPart}</a>;
+          }
+          return <span key={subIdx}>{subPart}</span>;
+        })}
+      </div>
+    );
+  });
 };
 
 const ChatRoom: React.FC = () => {
@@ -159,7 +185,7 @@ const ChatRoom: React.FC = () => {
       </div>
 
       {/* Messages */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-6 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
         {messages.map((msg, idx) => {
           const isProxyAI = msg.content.startsWith(AI_PREFIX);
           const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
@@ -174,15 +200,15 @@ const ChatRoom: React.FC = () => {
 
           return (
             <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} animate-in slide-in-from-bottom-2 duration-300`}>
-               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400'}`}>
+               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600 shadow-violet-200' : 'bg-slate-400'}`}>
                   {isBot ? <Bot size={16} /> : userInfo.name.charAt(0)}
                </div>
 
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                  <div className={`relative px-4 py-3 shadow-md text-xs font-medium leading-relaxed rounded-[1.5rem]
-                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : isBot ? 'bg-white text-slate-800 border-2 border-violet-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none'}`}>
+                  <div className={`relative px-4 py-3 shadow-sm text-xs font-medium leading-relaxed rounded-[1.5rem]
+                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-50 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/50'}`}>
                     
-                    <div className="whitespace-pre-wrap">{formatMessageContent(cleanContent)}</div>
+                    <div className="font-sans antialiased">{formatMessageContent(cleanContent)}</div>
                     
                     {/* Media attachments from AI */}
                     {resources.length > 0 && (
@@ -218,9 +244,9 @@ const ChatRoom: React.FC = () => {
                         </div>
                     )}
 
-                    <div className="flex items-center justify-end gap-2 mt-2 opacity-40">
-                        <span className="text-[8px] font-black uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        {(isMe || isAdmin) && <button onClick={() => handleDelete(msg.id)} className="hover:text-rose-500 transition-colors"><Trash2 size={10} /></button>}
+                    <div className="flex items-center justify-end gap-2 mt-2 opacity-30">
+                        <span className="text-[7px] font-black uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        {(isMe || isAdmin) && <button onClick={() => handleDelete(msg.id)} className="hover:text-rose-500 transition-colors"><Trash2 size={9} /></button>}
                     </div>
                   </div>
                </div>
@@ -231,11 +257,11 @@ const ChatRoom: React.FC = () => {
 
       {/* Universal Lightbox for Chat */}
       {lightboxImage && (
-        <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
-            {/* Lowered header for mobile to avoid clash with browser or app bars */}
+        <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
+            {/* Shifted header down for mobile to avoid clash with browser or app bars */}
             <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-20 md:pt-10">
                 <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Preview Attachment</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Media Viewer</span>
                     <span className="text-sm md:text-base font-bold truncate max-w-[160px] md:max-w-md">{lightboxImage.name}</span>
                 </div>
                 <div className="flex items-center gap-2 md:gap-3">
@@ -257,7 +283,7 @@ const ChatRoom: React.FC = () => {
             <div className="flex-1 flex items-center justify-center p-4 md:p-10 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
                 <img 
                     src={lightboxImage.url} 
-                    className="max-w-full max-h-[70vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
+                    className="max-w-full max-h-[70vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.3)] animate-in zoom-in-95 duration-500 border border-white/10" 
                     onClick={e => e.stopPropagation()} 
                 />
             </div>
