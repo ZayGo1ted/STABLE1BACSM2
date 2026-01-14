@@ -31,7 +31,7 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('DANGER: Permanently delete this user? This cannot be undone.')) {
+    if (confirm(t('delete_confirm'))) {
       try {
         await supabaseService.deleteUser(id);
         onUpdate({ users: users.filter(u => u.id !== id) });
@@ -49,10 +49,10 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">{t('classlist')}</h1>
           <div className="flex items-center gap-3 mt-1">
-            <p className="text-slate-500 font-bold text-sm">{users.length} members enrolled.</p>
+            <p className="text-slate-500 font-bold text-sm">{users.length} {t('members_enrolled')}</p>
             <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">{onlineUserIds.size} active</span>
+              <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">{onlineUserIds.size} {t('active_members')}</span>
             </div>
           </div>
         </div>
@@ -64,7 +64,7 @@ const ClassList: React.FC<Props> = ({ users, onUpdate }) => {
         </div>
         <input 
           type="text" 
-          placeholder="Search students..." 
+          placeholder={t('search_students')} 
           value={searchTerm} 
           onChange={(e) => setSearchTerm(e.target.value)} 
           className={`w-full bg-white border border-slate-200 rounded-2xl py-4 px-6 shadow-sm outline-none font-bold text-sm ${isRtl ? 'pr-14' : 'pl-14'} focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all`} 
