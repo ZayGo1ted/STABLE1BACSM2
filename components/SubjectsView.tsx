@@ -14,7 +14,7 @@ interface Props {
 }
 
 const SubjectsView: React.FC<Props> = ({ items, subjects, initialSubjectId, clearInitialSubject }) => {
-  const { lang } = useAuth();
+  const { lang, t } = useAuth();
   const [activeSubject, setActiveSubject] = useState<Subject | null>(null);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ const SubjectsView: React.FC<Props> = ({ items, subjects, initialSubjectId, clea
     return (
       <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500 pb-10">
         <button onClick={() => setActiveSubject(null)} className="text-[10px] font-black text-indigo-600 flex items-center gap-1 hover:underline uppercase tracking-widest">
-          &larr; Back to subjects
+          &larr; {t('back_subjects')}
         </button>
 
         <div className="flex items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-100 shadow-sm">
@@ -50,7 +50,7 @@ const SubjectsView: React.FC<Props> = ({ items, subjects, initialSubjectId, clea
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <section className="space-y-2">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Exams & Assessments</h2>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t('exams_assessments')}</h2>
             <div className="space-y-2">
               {exams.length > 0 ? exams.map(item => (
                 <div key={item.id} className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-sm space-y-2">
@@ -70,22 +70,22 @@ const SubjectsView: React.FC<Props> = ({ items, subjects, initialSubjectId, clea
                     </div>
                   )}
                 </div>
-              )) : <div className="p-6 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-[9px] font-black text-slate-300 uppercase">No exams</div>}
+              )) : <div className="p-6 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-[9px] font-black text-slate-300 uppercase">{t('no_exams')}</div>}
             </div>
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Homework & Exercises</h2>
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t('homework_exercises')}</h2>
             <div className="space-y-2">
               {homework.length > 0 ? homework.map(item => (
                 <div key={item.id} className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-colors">
                   <div className="flex justify-between items-start mb-1.5">
                      <h3 className="font-black text-xs text-slate-900 leading-tight">{item.title}</h3>
-                     <span className="text-[9px] font-black text-indigo-600 uppercase">Due: {item.date}</span>
+                     <span className="text-[9px] font-black text-indigo-600 uppercase">{t('due')}: {item.date}</span>
                   </div>
                   {item.notes && <p className="text-[10px] text-slate-500 mb-2 line-clamp-1 italic">{item.notes}</p>}
                 </div>
-              )) : <div className="p-6 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-[9px] font-black text-slate-300 uppercase">Clean slate</div>}
+              )) : <div className="p-6 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-[9px] font-black text-slate-300 uppercase">{t('clean_slate')}</div>}
             </div>
           </section>
         </div>
@@ -96,8 +96,8 @@ const SubjectsView: React.FC<Props> = ({ items, subjects, initialSubjectId, clea
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <section className="px-1">
-        <h1 className="text-xl font-black text-slate-900">Explore Curriculum</h1>
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select a subject to access materials</p>
+        <h1 className="text-xl font-black text-slate-900">{t('explore_curriculum')}</h1>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('select_subject')}</p>
       </section>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -113,7 +113,7 @@ const SubjectsView: React.FC<Props> = ({ items, subjects, initialSubjectId, clea
                 {SUBJECT_ICONS[subject.id] || <BookOpen size={20} />}
               </div>
               <h3 className="text-xs font-black text-slate-900 mb-0.5 truncate w-full">{subject.name[lang]}</h3>
-              <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{count} {count === 1 ? 'Task' : 'Tasks'}</p>
+              <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{count} {count === 1 ? t('task') : t('task')+'s'}</p>
             </div>
           );
         })}
