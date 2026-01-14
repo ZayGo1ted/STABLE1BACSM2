@@ -9,7 +9,8 @@ import {
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bell, BellOff, Sparkles, Bot, Bug, Reply,
-  ChevronDown, Copy, MoreVertical, ArrowDown, Eraser, AlertTriangle
+  ChevronDown, Copy, MoreVertical, ArrowDown, Eraser, AlertTriangle,
+  Download, ExternalLink
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
@@ -42,16 +43,10 @@ const formatMessageContent = (text: string) => {
 
 const ChatRoom: React.FC = () => {
   const { user, t, onlineUserIds, lang, isDev, isAdmin } = useAuth();
-  
-  // Data State
   const [userCache, setUserCache] = useState<any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  
-  // Input State
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
-  
-  // Refs for scroll management
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,7 +95,6 @@ const ChatRoom: React.FC = () => {
     };
   }, []);
 
-  // Use scrollTop for robust scrolling without layout shifts
   const scrollToBottom = () => {
     if (scrollContainerRef.current) {
       const { scrollHeight, clientHeight } = scrollContainerRef.current;
@@ -113,9 +107,7 @@ const ChatRoom: React.FC = () => {
   }, [messages.length]);
 
   const getUserInfo = (userId: string, content: string) => {
-    if (content.startsWith(AI_PREFIX)) {
-        return { name: 'Zay', role: 'ASSISTANT', isBot: true };
-    }
+    if (content.startsWith(AI_PREFIX)) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
     if (userId === ZAY_USER_ID) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
     const u = userCache.find((u: any) => u.id === userId);
     return u || { name: 'Student', role: 'STUDENT' };
@@ -126,23 +118,37 @@ const ChatRoom: React.FC = () => {
     setIsSending(true);
     const content = inputText;
     setInputText('');
-    
-    // Optimistic scroll
     scrollToBottom();
     
     try {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
-        const aiResponse = await aiService.askZay(content, user);
+        const aiRes = await aiService.askZay(content, user);
+        // AI responses with multiple files are packaged as JSON in mediaUrl for ChatRoom to render
         await supabaseService.sendMessage({ 
             userId: user.id, 
-            content: AI_PREFIX + aiResponse.text,
-            type: aiResponse.type,
-            mediaUrl: aiResponse.mediaUrl 
+            content: AI_PREFIX + aiRes.text,
+            type: aiRes.resources && aiRes.resources.length > 0 ? 'file' : 'text',
+            mediaUrl: aiRes.resources && aiRes.resources.length > 0 ? JSON.stringify(aiRes.resources) : undefined
         });
       }
     } catch (e) { alert("Failed to send"); }
     setIsSending(false);
+  };
+
+  const handleDownload = (url: string, name: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadAll = (resources: any[]) => {
+    resources.forEach((res, i) => {
+      setTimeout(() => handleDownload(res.url, res.name), i * 300);
+    });
   };
 
   const handleDelete = async (id: string) => {
@@ -163,7 +169,6 @@ const ChatRoom: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#f2f6ff] relative overflow-hidden">
-      {/* Header - Compact */}
       <div className="px-4 py-2 bg-white/80 backdrop-blur-md border-b border-white/50 flex justify-between items-center z-20 shadow-sm shrink-0 h-12">
         <div>
           <h2 className="text-xs font-black text-slate-900 tracking-tight">{t('chat')}</h2>
@@ -182,62 +187,71 @@ const ChatRoom: React.FC = () => {
         )}
       </div>
 
-      {/* Messages Area - Smaller text, fitting size */}
-      <div 
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#f2f6ff] scroll-smooth"
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#f2f6ff] scroll-smooth">
         {messages.map((msg, idx) => {
           const isProxyAI = msg.content.startsWith(AI_PREFIX);
           const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
           const userInfo = getUserInfo(msg.userId, msg.content);
-          
           const isMe = user && msg.userId === user.id && !isProxyAI;
           const isBot = userInfo.isBot;
           const canDelete = (user && msg.userId === user.id) || isAdmin;
-
           const prevMsg = messages[idx - 1];
           const isSequence = prevMsg && prevMsg.userId === msg.userId && !isProxyAI && !(prevMsg.content.startsWith(AI_PREFIX));
 
+          // Multi-resource handling from AI
+          let resources: any[] = [];
+          if (isProxyAI && msg.mediaUrl) {
+            try { resources = JSON.parse(msg.mediaUrl); } catch(e) {}
+          }
+
           return (
             <div key={msg.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''} ${isSequence ? 'mt-0.5' : 'mt-2'} animate-in slide-in-from-bottom-1 group`}>
-               {/* Avatar */}
                <div className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${!isSequence ? (isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400') : 'opacity-0'}`}>
                   {!isSequence && (isBot ? <Bot size={12} /> : userInfo.name.charAt(0))}
                </div>
 
-               {/* Bubble */}
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
                   {!isSequence && !isMe && <span className="text-[8px] font-bold text-slate-400 ml-1 mb-0.5">{userInfo.name}</span>}
-                  
                   <div className={`relative px-3 py-1.5 shadow-sm text-[11px] font-medium leading-relaxed
-                    ${isMe 
-                      ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm' 
-                      : isBot 
-                        ? 'bg-white text-slate-800 border border-violet-100 rounded-2xl rounded-tl-sm'
-                        : 'bg-white text-slate-800 rounded-2xl rounded-tl-sm'
-                    }
-                  `}>
-                    <div className="whitespace-pre-wrap break-words">
-                        {formatMessageContent(cleanContent)}
-                    </div>
+                    ${isMe ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm' : isBot ? 'bg-white text-slate-800 border border-violet-100 rounded-2xl rounded-tl-sm' : 'bg-white text-slate-800 rounded-2xl rounded-tl-sm'}`}>
+                    <div className="whitespace-pre-wrap break-words">{formatMessageContent(cleanContent)}</div>
                     
-                    {msg.mediaUrl && (
-                        <div className="mt-2">
-                            {msg.type === 'image' ? (
-                                <img src={msg.mediaUrl} className="rounded-lg max-h-32 object-cover" alt="attachment" />
-                            ) : (
-                                <a href={msg.mediaUrl} target="_blank" className="flex items-center gap-2 bg-black/10 p-2 rounded-lg text-[10px] underline">
-                                    <FileIcon size={12}/> Attachment
-                                </a>
+                    {/* Media Display */}
+                    {resources.length > 0 && (
+                        <div className="mt-3 space-y-3">
+                            <div className="grid grid-cols-2 gap-2">
+                                {resources.filter(r => r.type === 'image').map((img, i) => (
+                                    <div key={i} className="relative rounded-lg overflow-hidden border border-slate-100 group/img">
+                                        <img src={img.url} className="w-full aspect-square object-cover" alt={img.name} />
+                                        <button onClick={() => handleDownload(img.url, img.name)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                            <Download className="text-white" size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="space-y-1.5">
+                                {resources.filter(r => r.type !== 'image').map((file, i) => (
+                                    <div key={i} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <FileIcon size={12} className="text-slate-400 shrink-0" />
+                                            <span className="text-[9px] font-bold truncate text-slate-600">{file.name}</span>
+                                        </div>
+                                        <button onClick={() => handleDownload(file.url, file.name)} className="p-1 hover:text-indigo-600 transition-colors">
+                                            <Download size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            {resources.length > 1 && (
+                                <button onClick={() => handleDownloadAll(resources)} className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[9px] font-black uppercase rounded-lg transition-all flex items-center justify-center gap-2">
+                                    <Download size={12} /> Download All ({resources.length})
+                                </button>
                             )}
                         </div>
                     )}
-                    
-                    {/* Time & Actions */}
+
                     <div className="flex items-center justify-end gap-2 mt-0.5 opacity-60">
                         <span className="text-[7px] font-bold uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => handleReport(msg)} title="Report" className="hover:text-amber-400"><AlertTriangle size={8} /></button>
                             {canDelete && <button onClick={() => handleDelete(msg.id)}><Trash2 size={8} /></button>}
@@ -250,7 +264,6 @@ const ChatRoom: React.FC = () => {
         })}
       </div>
 
-      {/* Input Area */}
       <div className="p-2 bg-white border-t border-slate-100 relative z-30 pb-safe shrink-0">
          <div className="flex items-end gap-2">
             <input 
