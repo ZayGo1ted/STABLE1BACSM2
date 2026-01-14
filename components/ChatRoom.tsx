@@ -109,7 +109,7 @@ const ChatRoom: React.FC = () => {
 
   const handleDownloadAll = (resources: any[]) => {
     resources.forEach((res, i) => {
-      setTimeout(() => forceDownload(res.url, res.name), i * 400);
+      setTimeout(() => forceDownload(res.url, res.name), i * 500);
     });
   };
 
@@ -230,30 +230,31 @@ const ChatRoom: React.FC = () => {
       {/* Universal Lightbox for Chat */}
       {lightboxImage && (
         <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
-            <div className="flex justify-between items-center p-6 md:p-8 text-white border-b border-white/5">
+            {/* Shifted header down for mobile to avoid clash with main app menu */}
+            <div className="flex justify-between items-center p-6 md:p-8 text-white border-b border-white/5 pt-16 md:pt-8">
                 <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Preview Attachment</span>
-                    <span className="text-sm md:text-base font-bold truncate max-w-[200px] md:max-w-md">{lightboxImage.name}</span>
+                    <span className="text-sm md:text-base font-bold truncate max-w-[160px] md:max-w-md">{lightboxImage.name}</span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 md:gap-3">
                     <button 
                         onClick={() => forceDownload(lightboxImage.url, lightboxImage.name)} 
-                        className="px-6 py-3.5 bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-2xl border border-white/10 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all shadow-xl active:scale-95"
+                        className="px-5 md:px-6 py-3 bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl md:rounded-2xl border border-white/10 flex items-center gap-2 text-[10px] md:text-xs font-black uppercase tracking-widest transition-all shadow-xl active:scale-95"
                     >
-                        <Download size={20}/> Save
+                        <Download size={18}/> Save
                     </button>
                     <button 
                         onClick={() => setLightboxImage(null)} 
-                        className="p-3.5 bg-white/10 hover:bg-rose-600 rounded-2xl border border-white/10 transition-all shadow-xl active:scale-95"
+                        className="p-3 bg-white/10 hover:bg-rose-600 rounded-xl md:rounded-2xl border border-white/10 transition-all shadow-xl active:scale-95"
                     >
-                        <X size={24} />
+                        <X size={20} />
                     </button>
                 </div>
             </div>
             <div className="flex-1 flex items-center justify-center p-4 md:p-10 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
                 <img 
                     src={lightboxImage.url} 
-                    className="max-w-full max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
+                    className="max-w-full max-h-[75vh] md:max-h-[85vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
                     onClick={e => e.stopPropagation()} 
                 />
             </div>
