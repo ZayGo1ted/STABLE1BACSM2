@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AppState, Lesson } from '../types';
 import { useAuth } from '../AuthContext';
 import { supabaseService } from '../services/supabaseService';
@@ -7,7 +7,8 @@ import { SUBJECT_ICONS } from '../constants';
 import { 
   BookOpen, Calendar, Clock, Search, FileText, Image as ImageIcon, 
   Filter, ChevronLeft, ChevronRight, MoreVertical, Edit2, Trash2, 
-  Download, PlayCircle, Maximize2, X, Share2, CornerUpLeft, HardDrive
+  Download, PlayCircle, Maximize2, X, Share2, CornerUpLeft, HardDrive,
+  ExternalLink, ZoomIn
 } from 'lucide-react';
 
 interface Props {
@@ -23,6 +24,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
   
   // Detail View State
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{url: string, name: string} | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleDelete = async (id: string) => {
@@ -46,10 +48,11 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
     setActiveMenu(null);
   };
 
-  const handleDownload = (url: string, name: string) => {
+  const triggerDownload = (url: string, name: string) => {
     const link = document.createElement('a');
     link.href = url;
-    link.download = name;
+    link.setAttribute('download', name);
+    link.setAttribute('target', '_blank');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -62,8 +65,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
         const matchesSubject = selectedSubjectId === 'all' || l.subjectId === selectedSubjectId;
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch = l.title.toLowerCase().includes(searchLower) || 
-                              l.description.toLowerCase().includes(searchLower) ||
-                              l.keywords.some(k => k.toLowerCase().includes(searchLower));
+                              (l.description && l.description.toLowerCase().includes(searchLower));
         return matchesSubject && matchesSearch;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -85,79 +87,92 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
 
   // --- DETAIL VIEW COMPONENT ---
   const LessonDetailView = ({ lesson, onClose }: { lesson: Lesson, onClose: () => void }) => {
-    const images = lesson.attachments?.filter(a => a.type === 'image' || a.url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) || [];
-    const videos = lesson.attachments?.filter(a => a.type === 'video' || a.url.match(/\.(mp4|webm|mov)$/i)) || [];
-    const docs = lesson.attachments?.filter(a => !images.includes(a) && !videos.includes(a)) || [];
+    const attachments = lesson.attachments || [];
+    const images = attachments.filter(a => a.type === 'image' || a.url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) || [];
+    const videos = attachments.filter(a => a.type === 'video' || a.url.match(/\.(mp4|webm|mov)$/i)) || [];
+    const docs = attachments.filter(a => !images.includes(a) && !videos.includes(a)) || [];
     
     const subject = state.subjects.find(s => s.id === lesson.subjectId);
 
     const handleDownloadAll = () => {
-        lesson.attachments.forEach((att, i) => {
-            setTimeout(() => handleDownload(att.url, att.name), i * 350);
+        attachments.forEach((att, i) => {
+            setTimeout(() => triggerDownload(att.url, att.name), i * 400);
         });
     };
 
     return (
-        <div className="min-h-full space-y-6 animate-in slide-in-from-right duration-300">
-            {/* Nav */}
-            <div className="flex justify-between items-center">
-                 <button onClick={onClose} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-black uppercase tracking-widest text-xs transition-colors bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
+        <div className="min-h-full space-y-6 animate-in slide-in-from-right duration-300 max-w-full overflow-hidden">
+            {/* Nav Header - Fixed spacing to avoid overlap */}
+            <div className="flex items-center justify-between gap-4 sticky top-0 z-30 py-2 bg-[#f2f6ff]/80 backdrop-blur-sm">
+                 <button onClick={onClose} className="flex items-center gap-2 text-slate-600 hover:text-indigo-600 font-black uppercase tracking-widest text-[10px] transition-all bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm active:scale-95">
                     <CornerUpLeft size={16} /> {t('back_subjects')}
                  </button>
-                 <div className="flex gap-2">
-                    {lesson.attachments.length > 1 && (
-                        <button onClick={handleDownloadAll} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-emerald-700 transition-all">
-                            <Download size={16} /> Download All
+                 
+                 <div className="flex items-center gap-2">
+                    {attachments.length > 1 && (
+                        <button onClick={handleDownloadAll} className="hidden sm:flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95">
+                            <Download size={14} /> Download All ({attachments.length})
                         </button>
                     )}
                     {(isAdmin || isDev) && (
-                        <>
-                        <button onClick={() => handleEdit(lesson)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100"><Edit2 size={18}/></button>
-                        <button onClick={() => handleDelete(lesson.id)} className="p-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-100"><Trash2 size={18}/></button>
-                        </>
+                        <div className="flex gap-1.5 bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
+                            <button onClick={() => handleEdit(lesson)} title="Edit" className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"><Edit2 size={18}/></button>
+                            <button onClick={() => handleDelete(lesson.id)} title="Delete" className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 size={18}/></button>
+                        </div>
                     )}
                  </div>
             </div>
 
             <div className="space-y-6">
-                {/* Hero */}
+                {/* Hero Card */}
                 <div className={`relative rounded-[2.5rem] p-8 md:p-12 overflow-hidden shadow-2xl ${subject?.color || 'bg-slate-800'} text-white`}>
-                    <div className="relative z-10 space-y-4">
-                        <div className="flex items-center gap-3 opacity-90">
+                    <div className="relative z-10 space-y-6">
+                        <div className="flex flex-wrap items-center gap-3 opacity-90">
                             <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/10">{subject?.name[lang]}</span>
                             <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"><Calendar size={12}/> {lesson.date || new Date(lesson.createdAt).toLocaleDateString()}</span>
+                            <span className="bg-white/10 px-2 py-1 rounded-lg text-[9px] font-black uppercase border border-white/10">{lesson.type.replace('_', ' ')}</span>
                         </div>
                         <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight">{lesson.title}</h1>
-                        <div className="flex items-center gap-2 pt-2">
-                            {lesson.startTime && <div className="flex items-center gap-1.5 bg-black/20 px-3 py-1.5 rounded-lg text-xs font-bold backdrop-blur-sm"><Clock size={14}/> {lesson.startTime} - {lesson.endTime}</div>}
-                            <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-white/20 text-white backdrop-blur-sm border border-white/10`}>
-                                 {lesson.type.replace('_', ' ')}
+                        {(lesson.startTime || lesson.description) && (
+                            <div className="flex flex-col gap-3 pt-2">
+                                {lesson.startTime && (
+                                    <div className="flex items-center gap-1.5 bg-black/20 w-fit px-4 py-2 rounded-xl text-xs font-bold backdrop-blur-sm border border-white/5">
+                                        <Clock size={16}/> {lesson.startTime} — {lesson.endTime}
+                                    </div>
+                                )}
                             </div>
-                        </div>
+                        )}
                     </div>
+                    {/* Abstract Decorations */}
                     <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-black/10 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 space-y-6">
-                         <div className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><FileText size={14}/> {t('description')}</h2>
-                            <p className="whitespace-pre-wrap text-slate-700 font-medium leading-loose text-sm md:text-base">
-                                {lesson.description || "No text description provided."}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-12">
+                    <div className="lg:col-span-2 space-y-8">
+                         {/* Description */}
+                         <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><FileText size={16} className="text-indigo-500" /> {t('description')}</h2>
+                            <p className="whitespace-pre-wrap text-slate-700 font-medium leading-relaxed text-sm md:text-base">
+                                {lesson.description || "No text description provided for this lesson."}
                             </p>
                          </div>
 
+                         {/* Videos Section */}
                          {videos.length > 0 && (
                             <div className="space-y-4">
-                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2"><PlayCircle size={14}/> Videos</h2>
+                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 flex items-center gap-2"><PlayCircle size={16} className="text-rose-500" /> Video Lectures</h2>
                                 <div className="grid gap-6">
                                     {videos.map((vid, idx) => (
-                                        <div key={idx} className="bg-black rounded-[2rem] overflow-hidden shadow-xl border border-slate-800 relative">
-                                            <video controls className="w-full aspect-video" src={vid.url} preload="metadata" />
-                                            <div className="p-4 bg-slate-900 text-white flex justify-between items-center border-t border-white/10">
-                                                <span className="text-xs font-bold truncate pr-4">{vid.name}</span>
-                                                <button onClick={() => handleDownload(vid.url, vid.name)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-                                                    <Download size={16} />
+                                        <div key={idx} className="bg-white rounded-[2.5rem] overflow-hidden shadow-xl border border-slate-100 group">
+                                            <video controls className="w-full aspect-video bg-black" src={vid.url} preload="metadata" />
+                                            <div className="p-5 flex justify-between items-center">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-black text-slate-800 truncate">{vid.name}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Video Resource</p>
+                                                </div>
+                                                <button onClick={() => triggerDownload(vid.url, vid.name)} className="p-3 bg-slate-50 text-slate-500 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
+                                                    <Download size={18} />
                                                 </button>
                                             </div>
                                         </div>
@@ -166,18 +181,23 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                             </div>
                          )}
 
+                         {/* Image Gallery */}
                          {images.length > 0 && (
                             <div className="space-y-4">
-                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2"><ImageIcon size={14}/> Images</h2>
+                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 flex items-center gap-2"><ImageIcon size={16} className="text-emerald-500" /> Interactive Gallery</h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {images.map((img, idx) => (
-                                        <div key={idx} className="relative group rounded-[2rem] overflow-hidden shadow-sm bg-white border border-slate-100 aspect-square cursor-pointer" onClick={() => window.open(img.url, '_blank')}>
-                                            <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                <div className="flex gap-4">
-                                                    <Maximize2 className="text-white" size={24} />
-                                                    <Download className="text-white" size={24} onClick={(e) => { e.stopPropagation(); handleDownload(img.url, img.name); }} />
+                                        <div 
+                                            key={idx} 
+                                            className="relative group rounded-[2.5rem] overflow-hidden shadow-sm bg-white border border-slate-100 aspect-square cursor-zoom-in"
+                                            onClick={() => setLightboxImage({url: img.url, name: img.name})}
+                                        >
+                                            <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
+                                            <div className="absolute inset-0 bg-indigo-900/40 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-3">
+                                                <div className="p-3 bg-white/20 backdrop-blur-md rounded-full border border-white/30 text-white transform scale-90 group-hover:scale-100 transition-transform">
+                                                    <Maximize2 size={24} />
                                                 </div>
+                                                <p className="text-[10px] font-black text-white uppercase tracking-widest">{t('view')}</p>
                                             </div>
                                         </div>
                                     ))}
@@ -186,23 +206,25 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                          )}
                     </div>
 
+                    {/* Sidebar Resources */}
                     <div className="space-y-6">
-                        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Download size={14}/> Documents</h2>
+                        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm sticky top-20">
+                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><HardDrive size={16} className="text-indigo-500" /> {t('attachments')}</h2>
                             {docs.length === 0 ? (
-                                <div className="p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 text-center">
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">No documents</p>
+                                <div className="p-8 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 text-center">
+                                    <FileText className="mx-auto text-slate-300 mb-2" size={24} />
+                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">No extra files</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
                                     {docs.map((doc, idx) => (
-                                        <div key={idx} className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl transition-all group shadow-sm">
-                                            <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 shadow-sm shrink-0">
+                                        <div key={idx} className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-100 rounded-[1.5rem] transition-all group hover:bg-white hover:border-indigo-200 hover:shadow-md">
+                                            <div className="w-12 h-12 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 shadow-sm shrink-0 transition-colors">
                                                 <FileText size={20} />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <p className="text-xs font-black text-slate-700 truncate">{doc.name}</p>
-                                                <button onClick={() => handleDownload(doc.url, doc.name)} className="text-[8px] font-black text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                                                <p className="text-xs font-black text-slate-700 truncate mb-1">{doc.name}</p>
+                                                <button onClick={() => triggerDownload(doc.url, doc.name)} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1.5 px-2 py-1 bg-indigo-50 rounded-lg hover:bg-indigo-600 hover:text-white transition-all">
                                                     <Download size={10} /> {t('save')}
                                                 </button>
                                             </div>
@@ -210,10 +232,45 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                                     ))}
                                 </div>
                             )}
+                            
+                            {/* Mobile Download All button */}
+                            {attachments.length > 1 && (
+                                <button onClick={handleDownloadAll} className="w-full sm:hidden mt-6 flex items-center justify-center gap-2 bg-emerald-600 text-white p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-transform">
+                                    <Download size={14} /> Download All
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* In-App Image Lightbox */}
+            {lightboxImage && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
+                    <div className="flex justify-between items-center p-6 text-white">
+                        <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Preview</span>
+                            <span className="text-sm font-bold truncate max-w-[200px]">{lightboxImage.name}</span>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={() => triggerDownload(lightboxImage.url, lightboxImage.name)} className="p-3 bg-white/10 hover:bg-indigo-600 rounded-2xl transition-all border border-white/10 flex items-center gap-2 text-xs font-black uppercase tracking-widest">
+                                <Download size={18}/> <span className="hidden sm:inline">Save</span>
+                            </button>
+                            <button onClick={() => setLightboxImage(null)} className="p-3 bg-white/10 hover:bg-rose-600 rounded-2xl transition-all border border-white/10">
+                                <X size={20} />
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex items-center justify-center p-4 overflow-hidden" onClick={() => setLightboxImage(null)}>
+                        <img 
+                            src={lightboxImage.url} 
+                            alt="Full Preview" 
+                            className="max-w-full max-h-full object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-500" 
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
   };
