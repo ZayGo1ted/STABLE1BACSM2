@@ -8,9 +8,8 @@ import {
   Send, Mic, Image as ImageIcon, Paperclip, X, 
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
-  Bell, BellOff, Sparkles, Bot, Bug, Reply,
-  ChevronDown, Copy, MoreVertical, ArrowDown, Eraser, AlertTriangle,
-  Download, ExternalLink
+  Bot, AlertTriangle, Download, Loader2,
+  ChevronRight, CornerUpLeft
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
@@ -26,12 +25,6 @@ const formatMessageContent = (text: string) => {
         if (part.startsWith('@')) {
           return <span key={partIdx} className="font-bold text-indigo-600 bg-indigo-50 px-1 rounded mx-0.5 text-[10px]">{part}</span>;
         }
-        if (part.match(/^\[.*?\]\(.*?\)$/)) {
-            const match = part.match(/^\[(.*?)\]\((.*?)\)$/);
-            if (match) {
-                return <a key={partIdx} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-bold hover:text-indigo-800 break-all">{match[1]}</a>;
-            }
-        }
         if (part.match(/^https?:\/\//)) {
              return <a key={partIdx} href={part} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline truncate block">{part}</a>;
         }
@@ -42,11 +35,12 @@ const formatMessageContent = (text: string) => {
 };
 
 const ChatRoom: React.FC = () => {
-  const { user, t, onlineUserIds, lang, isDev, isAdmin } = useAuth();
+  const { user, t, onlineUserIds, lang, isAdmin } = useAuth();
   const [userCache, setUserCache] = useState<any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{url: string, name: string} | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,18 +65,11 @@ const ChatRoom: React.FC = () => {
         const newMsg = payload.new as any;
         setMessages(prev => {
           if (prev.some(m => m.id === newMsg.id)) return prev;
-          const formatted: ChatMessage = {
-            id: newMsg.id,
-            userId: newMsg.user_id,
-            content: newMsg.content,
-            type: newMsg.type,
-            mediaUrl: newMsg.media_url,
-            fileName: newMsg.file_name,
-            createdAt: newMsg.created_at,
-            reactions: newMsg.reactions || [],
-            readBy: newMsg.read_by || []
-          };
-          return [...prev, formatted];
+          return [...prev, {
+            id: newMsg.id, userId: newMsg.user_id, content: newMsg.content, type: newMsg.type,
+            mediaUrl: newMsg.media_url, fileName: newMsg.file_name, createdAt: newMsg.created_at,
+            reactions: newMsg.reactions || [], readBy: newMsg.read_by || []
+          }];
         });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
@@ -90,27 +77,34 @@ const ChatRoom: React.FC = () => {
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const scrollToBottom = () => {
-    if (scrollContainerRef.current) {
-      const { scrollHeight, clientHeight } = scrollContainerRef.current;
-      scrollContainerRef.current.scrollTop = scrollHeight - clientHeight;
-    }
-  };
-
   useEffect(() => {
-    scrollToBottom();
-  }, [messages.length]);
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const getUserInfo = (userId: string, content: string) => {
     if (content.startsWith(AI_PREFIX)) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
     if (userId === ZAY_USER_ID) return { name: 'Zay', role: 'ASSISTANT', isBot: true };
-    const u = userCache.find((u: any) => u.id === userId);
-    return u || { name: 'Student', role: 'STUDENT' };
+    return userCache.find((u: any) => u.id === userId) || { name: 'Student', role: 'STUDENT' };
+  };
+
+  const forceDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) { window.open(url, '_blank'); }
   };
 
   const handleSendMessage = async () => {
@@ -118,144 +112,102 @@ const ChatRoom: React.FC = () => {
     setIsSending(true);
     const content = inputText;
     setInputText('');
-    scrollToBottom();
-    
     try {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
         const aiRes = await aiService.askZay(content, user);
-        // AI responses with multiple files are packaged as JSON in mediaUrl for ChatRoom to render
         await supabaseService.sendMessage({ 
-            userId: user.id, 
-            content: AI_PREFIX + aiRes.text,
+            userId: user.id, content: AI_PREFIX + aiRes.text,
             type: aiRes.resources && aiRes.resources.length > 0 ? 'file' : 'text',
             mediaUrl: aiRes.resources && aiRes.resources.length > 0 ? JSON.stringify(aiRes.resources) : undefined
         });
       }
-    } catch (e) { alert("Failed to send"); }
+    } catch (e) {}
     setIsSending(false);
-  };
-
-  const handleDownload = (url: string, name: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleDownloadAll = (resources: any[]) => {
-    resources.forEach((res, i) => {
-      setTimeout(() => handleDownload(res.url, res.name), i * 300);
-    });
   };
 
   const handleDelete = async (id: string) => {
     if (confirm("Delete message?")) {
-        try { await supabaseService.deleteMessage(id); } catch(e) { alert("Delete failed"); }
-    }
-  };
-
-  const handleReport = async (msg: ChatMessage) => {
-    if (!user) return;
-    const confirmed = confirm("Report this message as a bug/issue?");
-    if (confirmed) {
-        const reportContent = `[REPORTED by ${user.name}] Content: ${msg.content}`;
-        await supabaseService.createAiLog(user.id, reportContent);
-        alert("Report submitted.");
+        try { await supabaseService.deleteMessage(id); } catch(e) {}
     }
   };
 
   return (
     <div className="flex flex-col h-full bg-[#f2f6ff] relative overflow-hidden">
-      <div className="px-4 py-2 bg-white/80 backdrop-blur-md border-b border-white/50 flex justify-between items-center z-20 shadow-sm shrink-0 h-12">
+      {/* Header */}
+      <div className="px-6 py-3 bg-white border-b border-slate-100 flex justify-between items-center z-20 shadow-sm shrink-0">
         <div>
-          <h2 className="text-xs font-black text-slate-900 tracking-tight">{t('chat')}</h2>
-          <div className="flex items-center gap-1.5">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-            </span>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{onlineUserIds.size} Online</p>
-          </div>
+          <h2 className="text-sm font-black text-slate-900 tracking-tight">{t('chat')}</h2>
+          <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+            {onlineUserIds.size} Online
+          </p>
         </div>
         {isAdmin && (
-             <button onClick={async () => { if(confirm("Clear ALL chat?")) await supabaseService.clearChat(); }} className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all">
-                  <Trash2 size={12} />
+             <button onClick={async () => { if(confirm("Clear chat history?")) await supabaseService.clearChat(); }} className="p-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-600 hover:text-white transition-all">
+                  <Trash2 size={16} />
              </button>
         )}
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#f2f6ff] scroll-smooth">
+      {/* Messages */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
         {messages.map((msg, idx) => {
           const isProxyAI = msg.content.startsWith(AI_PREFIX);
           const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
           const userInfo = getUserInfo(msg.userId, msg.content);
           const isMe = user && msg.userId === user.id && !isProxyAI;
           const isBot = userInfo.isBot;
-          const canDelete = (user && msg.userId === user.id) || isAdmin;
-          const prevMsg = messages[idx - 1];
-          const isSequence = prevMsg && prevMsg.userId === msg.userId && !isProxyAI && !(prevMsg.content.startsWith(AI_PREFIX));
-
-          // Multi-resource handling from AI
+          
           let resources: any[] = [];
           if (isProxyAI && msg.mediaUrl) {
             try { resources = JSON.parse(msg.mediaUrl); } catch(e) {}
           }
 
           return (
-            <div key={msg.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''} ${isSequence ? 'mt-0.5' : 'mt-2'} animate-in slide-in-from-bottom-1 group`}>
-               <div className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${!isSequence ? (isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400') : 'opacity-0'}`}>
-                  {!isSequence && (isBot ? <Bot size={12} /> : userInfo.name.charAt(0))}
+            <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''} animate-in slide-in-from-bottom-2 duration-300`}>
+               <div className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center text-[10px] font-black text-white shadow-md ${isMe ? 'bg-indigo-600' : isBot ? 'bg-violet-600' : 'bg-slate-400'}`}>
+                  {isBot ? <Bot size={16} /> : userInfo.name.charAt(0)}
                </div>
 
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                  {!isSequence && !isMe && <span className="text-[8px] font-bold text-slate-400 ml-1 mb-0.5">{userInfo.name}</span>}
-                  <div className={`relative px-3 py-1.5 shadow-sm text-[11px] font-medium leading-relaxed
-                    ${isMe ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm' : isBot ? 'bg-white text-slate-800 border border-violet-100 rounded-2xl rounded-tl-sm' : 'bg-white text-slate-800 rounded-2xl rounded-tl-sm'}`}>
-                    <div className="whitespace-pre-wrap break-words">{formatMessageContent(cleanContent)}</div>
+                  <div className={`relative px-4 py-3 shadow-md text-xs font-medium leading-relaxed rounded-[1.5rem]
+                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : isBot ? 'bg-white text-slate-800 border-2 border-violet-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none'}`}>
                     
-                    {/* Media Display */}
+                    <div className="whitespace-pre-wrap">{formatMessageContent(cleanContent)}</div>
+                    
+                    {/* Rich Media for AI Responses */}
                     {resources.length > 0 && (
-                        <div className="mt-3 space-y-3">
+                        <div className="mt-4 space-y-4">
                             <div className="grid grid-cols-2 gap-2">
                                 {resources.filter(r => r.type === 'image').map((img, i) => (
-                                    <div key={i} className="relative rounded-lg overflow-hidden border border-slate-100 group/img">
+                                    <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name})}>
                                         <img src={img.url} className="w-full aspect-square object-cover" alt={img.name} />
-                                        <button onClick={() => handleDownload(img.url, img.name)} className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                                            <Download className="text-white" size={16} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="space-y-1.5">
-                                {resources.filter(r => r.type !== 'image').map((file, i) => (
-                                    <div key={i} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded-xl">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <FileIcon size={12} className="text-slate-400 shrink-0" />
-                                            <span className="text-[9px] font-bold truncate text-slate-600">{file.name}</span>
+                                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                            <Maximize2 className="text-white" size={20} />
                                         </div>
-                                        <button onClick={() => handleDownload(file.url, file.name)} className="p-1 hover:text-indigo-600 transition-colors">
-                                            <Download size={12} />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="space-y-2">
+                                {resources.filter(r => r.type !== 'image').map((file, i) => (
+                                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl group/file">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <FileIcon size={14} className="text-indigo-500 shrink-0" />
+                                            <span className="text-[10px] font-black truncate text-slate-700">{file.name}</span>
+                                        </div>
+                                        <button onClick={() => forceDownload(file.url, file.name)} className="p-2 hover:bg-indigo-600 hover:text-white rounded-xl transition-all">
+                                            <Download size={14} />
                                         </button>
                                     </div>
                                 ))}
                             </div>
-                            {resources.length > 1 && (
-                                <button onClick={() => handleDownloadAll(resources)} className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[9px] font-black uppercase rounded-lg transition-all flex items-center justify-center gap-2">
-                                    <Download size={12} /> Download All ({resources.length})
-                                </button>
-                            )}
                         </div>
                     )}
 
-                    <div className="flex items-center justify-end gap-2 mt-0.5 opacity-60">
-                        <span className="text-[7px] font-bold uppercase">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleReport(msg)} title="Report" className="hover:text-amber-400"><AlertTriangle size={8} /></button>
-                            {canDelete && <button onClick={() => handleDelete(msg.id)}><Trash2 size={8} /></button>}
-                        </div>
+                    <div className="flex items-center justify-end gap-2 mt-2 opacity-40">
+                        <span className="text-[8px] font-black">{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        {(isMe || isAdmin) && <button onClick={() => handleDelete(msg.id)} className="hover:text-rose-500 transition-colors"><Trash2 size={10} /></button>}
                     </div>
                   </div>
                </div>
@@ -264,17 +216,37 @@ const ChatRoom: React.FC = () => {
         })}
       </div>
 
-      <div className="p-2 bg-white border-t border-slate-100 relative z-30 pb-safe shrink-0">
-         <div className="flex items-end gap-2">
+      {/* Lightbox for Chat */}
+      {lightboxImage && (
+        <div className="fixed inset-0 z-[200] bg-slate-950/98 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
+            <div className="flex justify-between items-center p-6 text-white">
+                <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Media Preview</span>
+                    <span className="text-sm font-bold truncate max-w-[200px]">{lightboxImage.name}</span>
+                </div>
+                <div className="flex gap-3">
+                    <button onClick={() => forceDownload(lightboxImage.url, lightboxImage.name)} className="px-6 py-3 bg-white/10 hover:bg-indigo-600 rounded-2xl border border-white/10 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all"><Download size={20}/> Save</button>
+                    <button onClick={() => setLightboxImage(null)} className="p-3 bg-white/10 hover:bg-rose-600 rounded-2xl border border-white/10 transition-all"><X size={24} /></button>
+                </div>
+            </div>
+            <div className="flex-1 flex items-center justify-center p-6" onClick={() => setLightboxImage(null)}>
+                <img src={lightboxImage.url} className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl animate-in zoom-in-95 duration-500" onClick={e => e.stopPropagation()} />
+            </div>
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="p-3 bg-white border-t border-slate-100 z-30 pb-safe shrink-0">
+         <div className="flex items-end gap-3 max-w-4xl mx-auto">
             <input 
-                className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-4 py-2 outline-none text-xs font-medium transition-all h-10"
+                className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-5 py-3 outline-none text-xs font-bold transition-all h-12 shadow-inner"
                 placeholder={t('chat_placeholder')}
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                onKeyDown={e => e.key === 'Enter' && !isSending && handleSendMessage()}
             />
-            <button onClick={handleSendMessage} disabled={isSending} className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50">
-                <Send size={14} className={lang === 'ar' ? 'rtl-flip' : ''} />
+            <button onClick={handleSendMessage} disabled={isSending} className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-90 disabled:opacity-50">
+                {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
             </button>
          </div>
       </div>
