@@ -8,7 +8,7 @@ import {
   BookOpen, Calendar, Clock, Search, FileText, Image as ImageIcon, 
   Filter, ChevronLeft, ChevronRight, MoreVertical, Edit2, Trash2, 
   Download, PlayCircle, Maximize2, X, Share2, CornerUpLeft, HardDrive,
-  ExternalLink, ZoomIn
+  CheckCircle2, Loader2
 } from 'lucide-react';
 
 interface Props {
@@ -22,7 +22,6 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   
-  // Detail View State
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [lightboxImage, setLightboxImage] = useState<{url: string, name: string} | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -32,30 +31,34 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
         try {
             const { error } = await supabaseService.deleteLesson(id);
             if (error) throw error;
-            const newLessons = state.lessons.filter(l => l.id !== id);
-            onUpdate({ lessons: newLessons });
-            setActiveMenu(null);
+            onUpdate({ lessons: state.lessons.filter(l => l.id !== id) });
             setSelectedLesson(null);
-        } catch (e: any) {
-            alert("Delete Failed: " + (e.message || "Unknown error"));
-        }
+        } catch (e: any) { alert("Delete Failed"); }
     }
   };
 
   const handleEdit = (lesson: Lesson) => {
-    const event = new CustomEvent('editLesson', { detail: lesson });
-    window.dispatchEvent(event);
+    window.dispatchEvent(new CustomEvent('editLesson', { detail: lesson }));
     setActiveMenu(null);
   };
 
-  const triggerDownload = (url: string, name: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', name);
-    link.setAttribute('target', '_blank');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // FORCED DOWNLOAD LOGIC (No external tab)
+  const forceDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      // Fallback if fetch is blocked
+      window.open(url, '_blank');
+    }
   };
 
   const filteredLessons = useMemo(() => {
@@ -64,9 +67,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
       .filter(l => {
         const matchesSubject = selectedSubjectId === 'all' || l.subjectId === selectedSubjectId;
         const searchLower = searchTerm.toLowerCase();
-        const matchesSearch = l.title.toLowerCase().includes(searchLower) || 
-                              (l.description && l.description.toLowerCase().includes(searchLower));
-        return matchesSubject && matchesSearch;
+        return matchesSubject && (l.title.toLowerCase().includes(searchLower) || (l.description && l.description.toLowerCase().includes(searchLower)));
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [state.lessons, selectedSubjectId, searchTerm]);
@@ -85,95 +86,95 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
     if (scrollRef.current) scrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
   };
 
-  // --- DETAIL VIEW COMPONENT ---
   const LessonDetailView = ({ lesson, onClose }: { lesson: Lesson, onClose: () => void }) => {
     const attachments = lesson.attachments || [];
     const images = attachments.filter(a => a.type === 'image' || a.url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) || [];
     const videos = attachments.filter(a => a.type === 'video' || a.url.match(/\.(mp4|webm|mov)$/i)) || [];
     const docs = attachments.filter(a => !images.includes(a) && !videos.includes(a)) || [];
-    
     const subject = state.subjects.find(s => s.id === lesson.subjectId);
 
-    const handleDownloadAll = () => {
-        attachments.forEach((att, i) => {
-            setTimeout(() => triggerDownload(att.url, att.name), i * 400);
-        });
+    const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+
+    const handleDownloadAll = async () => {
+        setIsDownloadingAll(true);
+        for (let i = 0; i < attachments.length; i++) {
+            await forceDownload(attachments[i].url, attachments[i].name);
+            await new Promise(r => setTimeout(r, 400));
+        }
+        setIsDownloadingAll(false);
     };
 
     return (
-        <div className="min-h-full space-y-6 animate-in slide-in-from-right duration-300 max-w-full overflow-hidden">
-            {/* Nav Header - Fixed spacing to avoid overlap */}
-            <div className="flex items-center justify-between gap-4 sticky top-0 z-30 py-2 bg-[#f2f6ff]/80 backdrop-blur-sm">
-                 <button onClick={onClose} className="flex items-center gap-2 text-slate-600 hover:text-indigo-600 font-black uppercase tracking-widest text-[10px] transition-all bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm active:scale-95">
+        <div className="min-h-full space-y-6 animate-in slide-in-from-right duration-300 max-w-full overflow-hidden pb-12">
+            {/* Action Bar - Cleanly separated buttons */}
+            <div className="flex items-center justify-between gap-4 sticky top-0 z-[40] py-3 bg-[#f2f6ff]/90 backdrop-blur-md px-1">
+                 <button onClick={onClose} className="flex items-center gap-2 text-slate-700 hover:text-indigo-600 font-black uppercase tracking-widest text-[10px] transition-all bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-md active:scale-95">
                     <CornerUpLeft size={16} /> {t('back_subjects')}
                  </button>
                  
-                 <div className="flex items-center gap-2">
+                 <div className="flex items-center gap-3">
                     {attachments.length > 1 && (
-                        <button onClick={handleDownloadAll} className="hidden sm:flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95">
-                            <Download size={14} /> Download All ({attachments.length})
+                        <button 
+                            onClick={handleDownloadAll} 
+                            disabled={isDownloadingAll}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-all active:scale-95 ${isDownloadingAll ? 'bg-slate-200 text-slate-400' : 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700'}`}
+                        >
+                            {isDownloadingAll ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                            {isDownloadingAll ? 'Downloading...' : `Download All (${attachments.length})`}
                         </button>
                     )}
                     {(isAdmin || isDev) && (
-                        <div className="flex gap-1.5 bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-                            <button onClick={() => handleEdit(lesson)} title="Edit" className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"><Edit2 size={18}/></button>
-                            <button onClick={() => handleDelete(lesson.id)} title="Delete" className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 size={18}/></button>
+                        <div className="flex gap-2 bg-white/50 p-1.5 rounded-2xl border border-slate-200 shadow-sm">
+                            <button onClick={() => handleEdit(lesson)} className="w-10 h-10 flex items-center justify-center bg-white text-indigo-600 rounded-xl border border-slate-100 shadow-sm hover:bg-indigo-50"><Edit2 size={18}/></button>
+                            <button onClick={() => handleDelete(lesson.id)} className="w-10 h-10 flex items-center justify-center bg-white text-rose-600 rounded-xl border border-slate-100 shadow-sm hover:bg-rose-50"><Trash2 size={18}/></button>
                         </div>
                     )}
                  </div>
             </div>
 
+            {/* Content Layout */}
             <div className="space-y-6">
-                {/* Hero Card */}
-                <div className={`relative rounded-[2.5rem] p-8 md:p-12 overflow-hidden shadow-2xl ${subject?.color || 'bg-slate-800'} text-white`}>
+                <div className={`relative rounded-[3rem] p-10 md:p-14 overflow-hidden shadow-2xl ${subject?.color || 'bg-slate-800'} text-white`}>
                     <div className="relative z-10 space-y-6">
                         <div className="flex flex-wrap items-center gap-3 opacity-90">
-                            <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/10">{subject?.name[lang]}</span>
-                            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"><Calendar size={12}/> {lesson.date || new Date(lesson.createdAt).toLocaleDateString()}</span>
-                            <span className="bg-white/10 px-2 py-1 rounded-lg text-[9px] font-black uppercase border border-white/10">{lesson.type.replace('_', ' ')}</span>
+                            <span className="px-3 py-1.5 bg-white/20 backdrop-blur-md rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/20">{subject?.name[lang]}</span>
+                            <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest bg-black/10 px-3 py-1.5 rounded-xl"><Calendar size={14}/> {lesson.date || new Date(lesson.createdAt).toLocaleDateString()}</span>
                         </div>
-                        <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight">{lesson.title}</h1>
-                        {(lesson.startTime || lesson.description) && (
-                            <div className="flex flex-col gap-3 pt-2">
-                                {lesson.startTime && (
-                                    <div className="flex items-center gap-1.5 bg-black/20 w-fit px-4 py-2 rounded-xl text-xs font-bold backdrop-blur-sm border border-white/5">
-                                        <Clock size={16}/> {lesson.startTime} — {lesson.endTime}
-                                    </div>
-                                )}
+                        <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight">{lesson.title}</h1>
+                        {lesson.startTime && (
+                            <div className="flex items-center gap-2 bg-black/20 w-fit px-5 py-2.5 rounded-2xl text-xs font-black backdrop-blur-md border border-white/10">
+                                <Clock size={16}/> {lesson.startTime} — {lesson.endTime}
                             </div>
                         )}
                     </div>
-                    {/* Abstract Decorations */}
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
-                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-black/10 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-white/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2"></div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-12">
-                    <div className="lg:col-span-2 space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-2 space-y-10">
                          {/* Description */}
-                         <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><FileText size={16} className="text-indigo-500" /> {t('description')}</h2>
-                            <p className="whitespace-pre-wrap text-slate-700 font-medium leading-relaxed text-sm md:text-base">
-                                {lesson.description || "No text description provided for this lesson."}
+                         <div className="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-100 shadow-sm">
+                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-2"><FileText size={18} className="text-indigo-500" /> {t('description')}</h2>
+                            <p className="whitespace-pre-wrap text-slate-700 font-medium leading-[2] text-sm md:text-lg">
+                                {lesson.description || "No description provided."}
                             </p>
                          </div>
 
-                         {/* Videos Section */}
-                         {videos.length > 0 && (
-                            <div className="space-y-4">
-                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 flex items-center gap-2"><PlayCircle size={16} className="text-rose-500" /> Video Lectures</h2>
-                                <div className="grid gap-6">
-                                    {videos.map((vid, idx) => (
-                                        <div key={idx} className="bg-white rounded-[2.5rem] overflow-hidden shadow-xl border border-slate-100 group">
-                                            <video controls className="w-full aspect-video bg-black" src={vid.url} preload="metadata" />
-                                            <div className="p-5 flex justify-between items-center">
-                                                <div className="min-w-0">
-                                                    <p className="text-xs font-black text-slate-800 truncate">{vid.name}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Video Resource</p>
-                                                </div>
-                                                <button onClick={() => triggerDownload(vid.url, vid.name)} className="p-3 bg-slate-50 text-slate-500 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
-                                                    <Download size={18} />
-                                                </button>
+                         {/* Images */}
+                         {images.length > 0 && (
+                            <div className="space-y-6">
+                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] px-4 flex items-center gap-2"><ImageIcon size={18} className="text-emerald-500" /> Study Materials</h2>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                    {images.map((img, idx) => (
+                                        <div 
+                                            key={idx} 
+                                            className="relative group rounded-[3rem] overflow-hidden shadow-md bg-white border border-slate-100 aspect-[4/5] cursor-zoom-in"
+                                            onClick={() => setLightboxImage({url: img.url, name: img.name})}
+                                        >
+                                            <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                            <div className="absolute inset-0 bg-indigo-950/40 opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-3">
+                                                <div className="p-4 bg-white/20 backdrop-blur-md rounded-full border border-white/30 text-white"><Maximize2 size={24} /></div>
+                                                <p className="text-[10px] font-black text-white uppercase tracking-widest">Click to View</p>
                                             </div>
                                         </div>
                                     ))}
@@ -181,23 +182,17 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                             </div>
                          )}
 
-                         {/* Image Gallery */}
-                         {images.length > 0 && (
-                            <div className="space-y-4">
-                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 flex items-center gap-2"><ImageIcon size={16} className="text-emerald-500" /> Interactive Gallery</h2>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {images.map((img, idx) => (
-                                        <div 
-                                            key={idx} 
-                                            className="relative group rounded-[2.5rem] overflow-hidden shadow-sm bg-white border border-slate-100 aspect-square cursor-zoom-in"
-                                            onClick={() => setLightboxImage({url: img.url, name: img.name})}
-                                        >
-                                            <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
-                                            <div className="absolute inset-0 bg-indigo-900/40 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-3">
-                                                <div className="p-3 bg-white/20 backdrop-blur-md rounded-full border border-white/30 text-white transform scale-90 group-hover:scale-100 transition-transform">
-                                                    <Maximize2 size={24} />
-                                                </div>
-                                                <p className="text-[10px] font-black text-white uppercase tracking-widest">{t('view')}</p>
+                         {/* Videos */}
+                         {videos.length > 0 && (
+                            <div className="space-y-6">
+                                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] px-4 flex items-center gap-2"><PlayCircle size={18} className="text-rose-500" /> Video Lectures</h2>
+                                <div className="grid gap-8">
+                                    {videos.map((vid, idx) => (
+                                        <div key={idx} className="bg-white rounded-[3rem] overflow-hidden shadow-xl border border-slate-100">
+                                            <video controls className="w-full aspect-video bg-black shadow-inner" src={vid.url} />
+                                            <div className="p-6 flex justify-between items-center bg-slate-50">
+                                                <span className="text-xs font-black text-slate-800 truncate pr-4">{vid.name}</span>
+                                                <button onClick={() => forceDownload(vid.url, vid.name)} className="p-3 bg-white text-slate-500 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Download size={20} /></button>
                                             </div>
                                         </div>
                                     ))}
@@ -206,66 +201,54 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                          )}
                     </div>
 
-                    {/* Sidebar Resources */}
                     <div className="space-y-6">
-                        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm sticky top-20">
-                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2"><HardDrive size={16} className="text-indigo-500" /> {t('attachments')}</h2>
+                        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm sticky top-24">
+                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2"><HardDrive size={18} className="text-indigo-500" /> Files</h2>
                             {docs.length === 0 ? (
-                                <div className="p-8 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 text-center">
-                                    <FileText className="mx-auto text-slate-300 mb-2" size={24} />
-                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">No extra files</p>
+                                <div className="p-10 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200 text-center">
+                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">No extra docs</p>
                                 </div>
                             ) : (
-                                <div className="space-y-3">
+                                <div className="space-y-4">
                                     {docs.map((doc, idx) => (
-                                        <div key={idx} className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-100 rounded-[1.5rem] transition-all group hover:bg-white hover:border-indigo-200 hover:shadow-md">
-                                            <div className="w-12 h-12 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 shadow-sm shrink-0 transition-colors">
-                                                <FileText size={20} />
-                                            </div>
+                                        <div key={idx} className="flex items-center gap-4 p-5 bg-slate-50 border border-slate-100 rounded-[2rem] transition-all hover:bg-white hover:border-indigo-200 hover:shadow-lg group">
+                                            <div className="w-12 h-12 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 shadow-sm shrink-0"><FileText size={24} /></div>
                                             <div className="min-w-0 flex-1">
                                                 <p className="text-xs font-black text-slate-700 truncate mb-1">{doc.name}</p>
-                                                <button onClick={() => triggerDownload(doc.url, doc.name)} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1.5 px-2 py-1 bg-indigo-50 rounded-lg hover:bg-indigo-600 hover:text-white transition-all">
-                                                    <Download size={10} /> {t('save')}
-                                                </button>
+                                                <button onClick={() => forceDownload(doc.url, doc.name)} className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 hover:text-indigo-800"><Download size={14} /> Download</button>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-                            )}
-                            
-                            {/* Mobile Download All button */}
-                            {attachments.length > 1 && (
-                                <button onClick={handleDownloadAll} className="w-full sm:hidden mt-6 flex items-center justify-center gap-2 bg-emerald-600 text-white p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-transform">
-                                    <Download size={14} /> Download All
-                                </button>
                             )}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* In-App Image Lightbox */}
+            {/* In-App Image Lightbox Overlay */}
             {lightboxImage && (
-                <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-300">
-                    <div className="flex justify-between items-center p-6 text-white">
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Preview</span>
-                            <span className="text-sm font-bold truncate max-w-[200px]">{lightboxImage.name}</span>
+                <div className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
+                    <div className="flex justify-between items-center p-6 text-white border-b border-white/10">
+                        <div className="flex items-center gap-3">
+                            <div className="p-3 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/30"><Maximize2 size={20}/></div>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Image Viewer</span>
+                                <span className="text-sm font-bold truncate max-w-[200px]">{lightboxImage.name}</span>
+                            </div>
                         </div>
                         <div className="flex gap-3">
-                            <button onClick={() => triggerDownload(lightboxImage.url, lightboxImage.name)} className="p-3 bg-white/10 hover:bg-indigo-600 rounded-2xl transition-all border border-white/10 flex items-center gap-2 text-xs font-black uppercase tracking-widest">
-                                <Download size={18}/> <span className="hidden sm:inline">Save</span>
+                            <button onClick={() => forceDownload(lightboxImage.url, lightboxImage.name)} className="px-6 py-3 bg-white/10 hover:bg-indigo-600 rounded-2xl transition-all border border-white/10 flex items-center gap-2 text-xs font-black uppercase tracking-widest">
+                                <Download size={20}/> Save
                             </button>
-                            <button onClick={() => setLightboxImage(null)} className="p-3 bg-white/10 hover:bg-rose-600 rounded-2xl transition-all border border-white/10">
-                                <X size={20} />
-                            </button>
+                            <button onClick={() => setLightboxImage(null)} className="p-3 bg-white/10 hover:bg-rose-600 rounded-2xl transition-all border border-white/10"><X size={24} /></button>
                         </div>
                     </div>
-                    <div className="flex-1 flex items-center justify-center p-4 overflow-hidden" onClick={() => setLightboxImage(null)}>
+                    <div className="flex-1 flex items-center justify-center p-6 overflow-hidden cursor-zoom-out" onClick={() => setLightboxImage(null)}>
                         <img 
                             src={lightboxImage.url} 
                             alt="Full Preview" 
-                            className="max-w-full max-h-full object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-500" 
+                            className="max-w-full max-h-full object-contain rounded-[2rem] shadow-[0_0_80px_rgba(99,102,241,0.2)] animate-in zoom-in-95 duration-500" 
                             onClick={(e) => e.stopPropagation()}
                         />
                     </div>
@@ -281,10 +264,10 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700 pb-20" onClick={() => setActiveMenu(null)}>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-1">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">{t('lesson_library')}</h1>
-          <p className="text-slate-500 font-bold text-xs uppercase tracking-wide">{t('access_materials')}</p>
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">{t('access_materials')}</p>
         </div>
         <div className="relative w-full md:w-64">
           <Search size={16} className="absolute left-4 top-3.5 text-slate-400" />
@@ -293,101 +276,49 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
             placeholder={t('search_lessons')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-3 font-bold text-xs outline-none focus:border-indigo-500 transition-colors shadow-sm"
+            className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-3.5 font-bold text-xs outline-none focus:border-indigo-500 shadow-sm"
           />
         </div>
       </div>
 
       <div className="relative group">
-        <button onClick={() => scroll(-200)} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg border border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex"><ChevronLeft size={20}/></button>
-        <button onClick={() => scroll(200)} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg border border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex"><ChevronRight size={20}/></button>
-        
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto hide-scrollbar py-2 px-1 snap-x snap-mandatory">
-            <button onClick={() => setSelectedSubjectId('all')} className={`snap-start flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all whitespace-nowrap border ${selectedSubjectId === 'all' ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-105' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300 shadow-sm'}`}><Filter size={12} /> {t('all')}</button>
+        <div ref={scrollRef} className="flex gap-2 overflow-x-auto hide-scrollbar py-2 px-1">
+            <button onClick={() => setSelectedSubjectId('all')} className={`flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border ${selectedSubjectId === 'all' ? 'bg-slate-900 text-white border-slate-900 shadow-xl' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300 shadow-sm'}`}><Filter size={12} /> {t('all')}</button>
             {state.subjects.map(subj => (
-            <button key={subj.id} onClick={() => setSelectedSubjectId(subj.id)} className={`snap-start flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all whitespace-nowrap border ${selectedSubjectId === subj.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-105' : 'bg-white text-slate-400 border-slate-100 hover:border-indigo-200 shadow-sm'}`}>{subj.name[lang]}</button>
+            <button key={subj.id} onClick={() => setSelectedSubjectId(subj.id)} className={`flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border ${selectedSubjectId === subj.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl' : 'bg-white text-slate-400 border-slate-100 hover:border-indigo-200 shadow-sm'}`}>{subj.name[lang]}</button>
             ))}
         </div>
       </div>
 
-      {Object.keys(groupedLessons).length === 0 ? (
-        <div className="text-center py-20 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
-           <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
-           <h3 className="text-slate-400 font-black uppercase tracking-widest text-xs">{t('no_results')}</h3>
-           <p className="text-slate-400 text-[10px] mt-1">Try adjusting your search filters</p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {(Object.entries(groupedLessons) as [string, Lesson[]][]).map(([subjId, lessons]) => {
-            const subject = state.subjects.find(s => s.id === subjId);
-            if (!subject) return null;
-
-            return (
-              <div key={subjId} className="space-y-4">
-                 {selectedSubjectId === 'all' && (
-                   <div className="flex items-center gap-3 px-2">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-white ${subject.color}`}>
-                        {SUBJECT_ICONS[subjId] || <BookOpen size={14}/>}
-                      </div>
-                      <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">{subject.name[lang]}</h2>
-                      <span className="bg-slate-100 text-slate-500 text-[9px] font-black px-2 py-0.5 rounded-md">{lessons.length}</span>
-                   </div>
-                 )}
-
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {lessons.map(lesson => (
-                      <div key={lesson.id} onClick={() => setSelectedLesson(lesson)} className="group bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all flex flex-col justify-between h-full relative cursor-pointer">
-                         {(isAdmin || isDev) && (
-                            <div className="absolute top-4 right-4 z-20">
-                                <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === lesson.id ? null : lesson.id); }} className="p-2 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
-                                    <MoreVertical size={16} />
-                                </button>
-                                {activeMenu === lesson.id && (
-                                    <div className="absolute right-0 mt-2 w-32 bg-white rounded-xl shadow-xl border border-slate-100 py-2 animate-in fade-in zoom-in-95 z-30">
-                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(lesson); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600 flex items-center gap-2">
-                                            <Edit2 size={12}/> {t('edit')}
-                                        </button>
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(lesson.id); }} className="w-full text-left px-4 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2">
-                                            <Trash2 size={12}/> {t('delete')}
-                                        </button>
-                                    </div>
-                                )}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredLessons.map(lesson => (
+            <div key={lesson.id} onClick={() => setSelectedLesson(lesson)} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col justify-between h-full relative cursor-pointer group">
+                {(isAdmin || isDev) && (
+                    <div className="absolute top-4 right-4 z-20">
+                        <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === lesson.id ? null : lesson.id); }} className="p-2 text-slate-300 hover:text-indigo-600"><MoreVertical size={16} /></button>
+                        {activeMenu === lesson.id && (
+                            <div className="absolute right-0 mt-2 w-32 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 z-30">
+                                <button onClick={(e) => { e.stopPropagation(); handleEdit(lesson); }} className="w-full text-left px-4 py-2 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50">Edit</button>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(lesson.id); }} className="w-full text-left px-4 py-2 text-[10px] font-black uppercase text-rose-500 hover:bg-rose-50">Delete</button>
                             </div>
-                         )}
-
-                         <div>
-                            <div className="flex justify-between items-start mb-3">
-                               <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wide ${
-                                 lesson.type === 'lesson' ? 'bg-indigo-50 text-indigo-600' :
-                                 lesson.type === 'exercise' ? 'bg-emerald-50 text-emerald-600' :
-                                 lesson.type === 'summary' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'
-                               }`}>
-                                 {lesson.type.replace('_', ' ')}
-                               </span>
-                               <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1 pr-8">
-                                 <Calendar size={10} /> {lesson.date || new Date(lesson.createdAt).toLocaleDateString()}
-                               </span>
-                            </div>
-                            <h3 className="text-sm font-black text-slate-900 leading-tight mb-2 line-clamp-2" title={lesson.title}>{lesson.title}</h3>
-                            <p className="text-[10px] text-slate-500 font-medium line-clamp-3 mb-4 leading-relaxed whitespace-pre-wrap">{lesson.description}</p>
-                         </div>
-
-                         <div className="pt-3 border-t border-slate-50 mt-auto flex justify-between items-center">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                                <HardDrive size={10} /> {(lesson.attachments?.length || 0)} resources
-                            </span>
-                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                <ChevronRight size={16} />
-                            </div>
-                         </div>
-                      </div>
-                    ))}
-                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                        )}
+                    </div>
+                )}
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <span className="px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600">{lesson.type}</span>
+                        <span className="text-[9px] font-bold text-slate-400">{lesson.date || new Date(lesson.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <h3 className="text-base font-black text-slate-900 leading-tight mb-3 group-hover:text-indigo-600 transition-colors">{lesson.title}</h3>
+                    <p className="text-[11px] text-slate-500 line-clamp-3 mb-6 font-medium leading-relaxed">{lesson.description}</p>
+                </div>
+                <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><HardDrive size={12}/> {lesson.attachments?.length || 0} Files</span>
+                    <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-indigo-600 group-hover:text-white transition-colors"><ChevronRight size={18}/></div>
+                </div>
+            </div>
+        ))}
+      </div>
     </div>
   );
 };
