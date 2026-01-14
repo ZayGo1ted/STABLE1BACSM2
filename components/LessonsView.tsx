@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AppState, Lesson } from '../types';
 import { useAuth } from '../AuthContext';
@@ -96,7 +97,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
         setIsDownloadingAll(true);
         for (let i = 0; i < attachments.length; i++) {
             await forceDownload(attachments[i].url, attachments[i].name);
-            await new Promise(r => setTimeout(r, 450));
+            await new Promise(r => setTimeout(r, 600));
         }
         setIsDownloadingAll(false);
     };
@@ -230,7 +231,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
             {lightboxImage && (
                 <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
                     {/* Shifted header down for mobile to avoid clash with main app menu */}
-                    <div className="flex justify-between items-center p-6 md:p-8 text-white border-b border-white/5 pt-16 md:pt-8">
+                    <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-20 md:pt-10">
                         <div className="flex items-center gap-4">
                             <div className="hidden sm:flex p-3 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/20"><Maximize2 size={24}/></div>
                             <div className="flex flex-col">
@@ -243,14 +244,13 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                                 onClick={() => forceDownload(lightboxImage.url, lightboxImage.name)} 
                                 className="px-5 md:px-6 py-3 bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl md:rounded-2xl transition-all border border-white/10 flex items-center gap-2 text-[10px] md:text-xs font-black uppercase tracking-widest shadow-xl active:scale-95"
                             >
-                                <Download size={18}/> <span className="hidden md:inline">Save Image</span>
+                                <Download size={18}/> Save
                             </button>
                             <button 
                                 onClick={() => setLightboxImage(null)} 
                                 className="p-3 bg-white/10 hover:bg-rose-600 text-white rounded-xl md:rounded-2xl transition-all border border-white/10 shadow-xl active:scale-95"
                                 title="Close"
                             >
-                                {/* Fix: Removed invalid md:size prop which caused a TypeScript error */}
                                 <X size={24} />
                             </button>
                         </div>
@@ -259,7 +259,7 @@ const LessonsView: React.FC<Props> = ({ state, onUpdate }) => {
                         <img 
                             src={lightboxImage.url} 
                             alt="Full Size" 
-                            className="max-w-full max-h-[75vh] md:max-h-[85vh] object-contain rounded-2xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
+                            className="max-w-full max-h-[70vh] md:max-h-[85vh] object-contain rounded-2xl shadow-[0_0_100px_rgba(99,102,241,0.25)] animate-in zoom-in-95 duration-500 border border-white/10" 
                             onClick={(e) => e.stopPropagation()}
                         />
                     </div>
