@@ -15,6 +15,79 @@ export const getSupabase = () => {
   return supabaseInstance;
 };
 
+/**
+ * Compression Utility
+ * Converts images to WebP and downscales huge dimensions to max 1920px width.
+ */
+const compressFile = async (file: File): Promise<File> => {
+  // If not an image, return original
+  if (!file.type.startsWith('image/')) {
+    return file;
+  }
+
+  // Skip SVGs or GIFs to preserve animation/vectors
+  if (file.type.includes('svg') || file.type.includes('gif')) {
+    return file;
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Smart Resizing: Max width 1920px (Full HD)
+        const MAX_WIDTH = 1920;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round(height * (MAX_WIDTH / width));
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw image to canvas
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Compress to WebP at 75% quality
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file); // Fallback to original if blob failed
+              return;
+            }
+            
+            // Create new File with .webp extension
+            const newName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+            const newFile = new File([blob], newName, {
+              type: 'image/webp',
+              lastModified: Date.now(),
+            });
+            
+            console.log(`Compression: ${file.size}B -> ${newFile.size}B (Saved ${Math.round((1 - newFile.size/file.size)*100)}%)`);
+            resolve(newFile);
+          },
+          'image/webp',
+          0.75 
+        );
+      };
+      
+      img.onerror = (err) => resolve(file); // Fallback
+    };
+    
+    reader.onerror = (err) => resolve(file); // Fallback
+  });
+};
+
 export const supabaseService = {
   isConfigured: () => true,
 
@@ -106,9 +179,17 @@ export const supabaseService = {
   clearChat: async () => getSupabase().from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
 
   uploadFile: async (file: File) => {
-    const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    // 1. Compress file if it's an image
+    const processedFile = await compressFile(file);
+
+    // 2. Upload processed file
+    const cleanName = processedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const fileName = `${Date.now()}_${cleanName}`;
-    const { error } = await getSupabase().storage.from('lessons').upload(fileName, file);
+    const { error } = await getSupabase().storage.from('lessons').upload(fileName, processedFile, {
+        cacheControl: '3600',
+        upsert: false
+    });
+    
     if (error) throw error;
     return getSupabase().storage.from('lessons').getPublicUrl(fileName).data.publicUrl;
   },
