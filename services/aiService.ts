@@ -29,7 +29,7 @@ export const aiService = {
     try {
       // Re-initialize for every call to ensure the latest environment key is used
       const ai = new GoogleGenAI({ apiKey: apiKey });
-      const modelName = 'gemini-3-flash-preview';
+      const modelName = 'gemini-2.5-flash-lite';
 
       // 1. Context Sync from Hub Library
       const freshState = await supabaseService.fetchFullState();
