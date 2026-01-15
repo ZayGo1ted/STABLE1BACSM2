@@ -5,7 +5,7 @@ import { useAuth } from '../AuthContext';
 import { supabaseService } from '../services/supabaseService';
 import { 
   ChevronLeft, ChevronRight, Clock, MapPin, X, Calendar as CalendarIcon, 
-  Edit2, AlertCircle, Trash2
+  Edit2, AlertCircle, Trash2, FileText, Link as LinkIcon, Video
 } from 'lucide-react';
 import { SUBJECT_ICONS } from '../constants';
 
@@ -41,7 +41,8 @@ const CalendarView: React.FC<Props> = ({ items, subjects, onUpdate, onEditReques
   };
 
   const filteredItems = useMemo(() => {
-    return items.filter(i => {
+    // Fix: Ensure items is treated as an array and return value is typed as AcademicItem[]
+    return (items || []).filter(i => {
       if (filterType === 'all') return true;
       return i.type === filterType;
     });
@@ -375,6 +376,21 @@ const CalendarView: React.FC<Props> = ({ items, subjects, onUpdate, onEditReques
                         {selectedItem.notes || t('no_items')}
                     </div>
                 </div>
+
+                {/* Fix: Added resources section display with type safety for map call to resolve unknown error */}
+                {selectedItem.resources && selectedItem.resources.length > 0 && (
+                    <div className="space-y-2">
+                        <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">{t('resources')}</h4>
+                        <div className="flex flex-wrap gap-2">
+                            {selectedItem.resources.map(res => (
+                                <a key={res.id} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-[10px] font-black text-slate-600 transition-colors">
+                                    {res.type === 'pdf' ? <FileText size={10} /> : res.type === 'video' ? <Video size={10} /> : <LinkIcon size={10} />}
+                                    <span className="truncate max-w-[100px]">{res.title}</span>
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-100 mt-2">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md ${subjects.find(s => s.id === selectedItem.subjectId)?.color}`}>
