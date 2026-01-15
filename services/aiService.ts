@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { User, ChatMessage, Lesson } from '../types';
+import { User, ChatMessage, Lesson, AcademicItem } from '../types';
 import { supabaseService } from './supabaseService';
 import { ZAY_USER_ID } from '../constants';
 
@@ -15,9 +15,8 @@ interface AiResponse {
 }
 
 /**
- * Zay AI: Smart Diagnostic Academic Layer
- * Engine: gemini-flash-lite-latest
- * Features: Multi-turn memory, Strict file retrieval, 1BacSM logic checking.
+ * Zay AI: Advanced Diagnostic & Resource Layer
+ * Engine: gemini-2.5-flash
  */
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = [], imageUrl?: string): Promise<AiResponse> => {
@@ -25,7 +24,7 @@ export const aiService = {
     
     if (!apiKey) {
       return { 
-        text: "System Alert: API Key missing. AI Core is offline.", 
+        text: "System Alert: API Key missing. Please check configuration.", 
         type: 'text' 
       };
     }
@@ -34,22 +33,30 @@ export const aiService = {
       const ai = new GoogleGenAI({ apiKey: apiKey });
       const modelName = 'gemini-2.5-flash';
 
-      // 1. Fetch current library state for grounding
+      // 1. Fetch Comprehensive State
       const freshState = await supabaseService.fetchFullState();
       const allLessons = freshState.lessons || [];
       const subjects = freshState.subjects || [];
+      const academicItems = freshState.items || []; // This includes homework/exams
 
-      // 2. Format Classroom Library for AI Context
-      const classroomLibrary = allLessons.map(l => ({
+      // 2. Build Intelligent Context
+      const hubLibrary = allLessons.map(l => ({
+        lesson_id: l.id,
         title: l.title,
         subject: subjects.find(s => s.id === l.subjectId)?.name.en,
-        description: l.description,
-        type: l.type,
-        attachments: l.attachments || [] // These are the real URLs from the DB
+        summary: l.description,
+        attachments: l.attachments || [] // Real DB links
       }));
 
-      // 3. Construct Conversational Memory
-      // Limit history to last 15 messages to stay within context limits
+      const activeHomework = academicItems.map(i => ({
+        title: i.title,
+        type: i.type,
+        due: i.date,
+        subject: subjects.find(s => s.id === i.subjectId)?.name.en,
+        lesson_link: i.title // Students often refer to homework by lesson name
+      }));
+
+      // 3. Process History (Memory)
       const contextHistory = history.slice(-15).map(msg => {
         const isAI = msg.userId === ZAY_USER_ID || msg.content.startsWith(AI_PREFIX);
         return {
@@ -58,33 +65,35 @@ export const aiService = {
         };
       });
 
-      // 4. System Instruction: The "Brain" of Zay
+      // 4. Advanced System Instructions
       const systemInstruction = `
-        You are Zay, a highly intelligent and helpful academic assistant for a 1Bac Science Math (SM) classroom.
-        
-        **CORE COMPETENCIES**:
-        - **MEMORY**: You remember previous parts of the conversation. If a student asks "tell me more about that", refer to the history.
-        - **DIAGNOSTIC ERROR DETECTION**: If a student provides math/physics steps, find errors. 
-          Use prefix: "[DIAGNOSTIC ALERT]: Error in [Concept]" for any logic/calculation flaws.
-        - **REAL FILE DELIVERY**: You have a "HUB_LIBRARY" below. 
-          If a user asks for a lesson, summary, or files, find the matching item in the library.
-          You MUST NOT make up file names or URLs. 
-          If you find a match, append the actual attachments using: [ATTACH_RESOURCES: JSON_ARRAY_OF_ATTACHMENTS]
-          Example: [ATTACH_RESOURCES: [{"name": "Lesson.pdf", "url": "https://...", "type": "file"}]]
+        You are Zay, the Smart Diagnostic Assistant for the 1BacSM Hub.
+        Engine: Gemini 2.5 Flash.
 
-        **CURRICULUM (1BacSM)**:
-        - Math (Logic, Sets, Functions, Trig)
-        - Physics (Mechanics, Electricity, Chemistry)
-        - SVT (Geology)
-        
-        **HUB_LIBRARY (THE ONLY SOURCE FOR REAL FILES)**:
-        ${JSON.stringify(classroomLibrary, null, 1)}
+        **BEHAVIORAL RULES**:
+        1. **MEMORY**: Always refer back to history if the user says "it", "that", or "him".
+        2. **FILE DELIVERY**: If a user asks for a lesson, you MUST find the match in HUB_LIBRARY and send the REAL links.
+           USE TAG: [ATTACH_RESOURCES: JSON_ARRAY]
+           NEVER invent links. If it's in the DB, send the actual attachment objects.
+        3. **NO-HOMEWORK LOGIC**: 
+           If a student asks for "exercises" or "homework" for a specific lesson:
+           - Check HUB_LIBRARY (attachments) and ACTIVE_HOMEWORK list.
+           - If there are NO assigned files or homework items for that specific lesson, you MUST say:
+             "I found 0 assigned homeworks for [Lesson Name] in the Hub. Would you like me to generate an AI-powered exercise series based on the resources available in the database for this lesson?"
+        4. **DIAGNOSTICS**: If a student shows math/physics work, check for errors.
+           Prefix errors with: "[DIAGNOSTIC ALERT]: Error in [Concept]"
 
-        **USER INFO**:
-        Student Name: ${requestingUser?.name || 'Student'}
+        **HUB_LIBRARY**:
+        ${JSON.stringify(hubLibrary, null, 1)}
+
+        **ACTIVE_HOMEWORK (Official Tasks)**:
+        ${JSON.stringify(activeHomework, null, 1)}
+
+        **USER CONTEXT**:
+        Current Student: ${requestingUser?.name || 'Student'}
       `;
 
-      // 5. Multi-modal Construction for current prompt
+      // 5. Build Request Parts
       const currentParts: any[] = [{ text: userQuery }];
       if (imageUrl) {
         try {
@@ -95,12 +104,11 @@ export const aiService = {
             reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
             reader.readAsDataURL(blob);
           });
-          // Fix: Always use the correct variable name 'currentParts' to append multimodal parts
           currentParts.push({ inlineData: { data: base64, mimeType: blob.type } });
-        } catch (e) { console.warn("Vision input failed."); }
+        } catch (e) { console.warn("Image capture failed."); }
       }
 
-      // 6. Execute Request with Memory
+      // 6. API Call
       const response = await ai.models.generateContent({
         model: modelName,
         contents: [
@@ -109,7 +117,7 @@ export const aiService = {
         ],
         config: {
           systemInstruction,
-          temperature: 0.1, // Low temp for facts/logic
+          temperature: 0.15,
           tools: [{ googleSearch: {} }]
         },
       });
@@ -119,17 +127,15 @@ export const aiService = {
       let grounding: any[] = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-      // 7. Resource Extraction logic
-      const resourceTag = "[ATTACH_RESOURCES:";
-      if (text.includes(resourceTag)) {
-        const parts = text.split(resourceTag);
+      // 7. Parse Resources
+      const tag = "[ATTACH_RESOURCES:";
+      if (text.includes(tag)) {
+        const parts = text.split(tag);
         text = parts[0].trim();
-        const jsonContent = parts[1].split(']')[0].trim();
+        const jsonStr = parts[1].split(']')[0].trim();
         try {
-          resources = JSON.parse(jsonContent);
-        } catch (e) {
-          console.error("Resource parsing failure:", e);
-        }
+          resources = JSON.parse(jsonStr);
+        } catch (e) { console.error("JSON Parse Error in AI response", e); }
       }
 
       return { 
@@ -141,9 +147,9 @@ export const aiService = {
       };
 
     } catch (error: any) {
-      console.error("[Zay Lite Error]:", error);
+      console.error("[Zay 2.5 Error]:", error);
       return { 
-        text: "My neural link is flickering. One moment...", 
+        text: "My neural processor is resetting. Please repeat that query.", 
         type: 'text' 
       };
     }
