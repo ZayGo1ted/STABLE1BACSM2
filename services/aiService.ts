@@ -1,5 +1,4 @@
 
-import { GoogleGenAI } from "@google/genai";
 import { User, ChatMessage } from '../types';
 import { supabaseService } from './supabaseService';
 
@@ -10,110 +9,135 @@ interface AiResponse {
   type: 'text' | 'image' | 'file';
 }
 
+/**
+ * AI Service: NVIDIA NIM Implementation
+ * Targeted Model: llama-4-maverick-17b-128e-instruct
+ * Optimized for: Multi-modal context (Images/PDF metadata)
+ */
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = []): Promise<AiResponse> => {
     const apiKey = process.env.API_KEY;
-    
+    const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+    const MODEL_ID = "meta/llama-4-maverick-17b-128e-instruct";
+
     if (!apiKey) {
-      console.error("API_KEY missing");
-      return { text: "System Error: Missing AI Configuration.", type: 'text' };
+      console.error("API_KEY (NVIDIA) missing");
+      return { text: "System Error: NVIDIA Hub Configuration missing.", type: 'text' };
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      
-      // 1. Fetch ALL Database Data
+      // 1. Fetch Fresh State for Context
       const freshState = await supabaseService.fetchFullState();
       const lessons = freshState.lessons || [];
-      const items = freshState.items || [];
       const subjects = freshState.subjects || [];
 
-      // 2. Format a "Hub Library Index" for the AI
-      const hubLibraryIndex = lessons.map(l => ({
-        id: l.id,
-        title: l.title,
-        subject: subjects.find(s => s.id === l.subjectId)?.name.en || 'General',
-        type: l.type, // e.g., 'lesson', 'summary', 'exercise'
-        description: l.description, // CRITICAL: AI will use this for the "90% Rule"
-        keywords: l.keywords || [],
-        files: (l.attachments || []).map(a => ({ name: a.name, url: a.url, type: a.type }))
-      }));
-
-      // 3. Build Conversation Memory
-      const recentHistory = history
-        .filter(m => !m.mediaUrl || m.mediaUrl.length < 500)
-        .slice(-8)
-        .map(m => {
-          const role = m.content.startsWith(":::AI_RESPONSE:::") ? "Zay" : "Student";
-          const cleanContent = m.content.replace(":::AI_RESPONSE:::", "");
-          return `${role}: ${cleanContent}`;
-        })
-        .join('\n');
-
-      // 4. Enhanced System Instruction
-      const systemInstruction = `
-        You are Zay, the Elite AI Academic Hub Controller for 1BacSM. 
-        Your intelligence is directly powered by the **HUB LIBRARY INDEX** below.
-
-        **INTERNAL DATABASE (HUB LIBRARY INDEX)**:
-        ${JSON.stringify(hubLibraryIndex, null, 2)}
-
-        **ACADEMIC CALENDAR**:
-        ${JSON.stringify(items.map(i => ({ title: i.title, type: i.type, date: i.date })), null, 2)}
-
-        **STRICT OPERATIONAL DIRECTIVES**:
-
-        1. **90% DATA DEPENDENCY RULE**:
-           - When a user asks for an **Exercise**, **Série**, or **Résumé** for a specific topic:
-           - First, find the matching entry in the HUB LIBRARY INDEX.
-           - You **MUST** use the content from its 'description' and 'keywords' to shape at least 90% of your response. 
-           - If the description says the lesson focuses on "Barycenters of 3 points", your generated exercises MUST focus on barycenters of 3 points.
-           - Do not use generic internet examples if the Hub description provides specific focus areas.
-
-        2. **SERIES & SUMMARY PROTOCOL**:
-           - If the user asks for a "Série" (or "exo", "exercices") and there is an entry of type 'exercise' for that topic:
-             * Say: "I found the exercise series for **[Topic]** in the Hub."
-             * Attach the files from that specific entry.
-           - If the user asks for a "Série" but the Hub only has a 'lesson' for that topic:
-             * **GENERATE** the exercises in the chat using the lesson's description as your primary source.
-             * **ALSO** attach the lesson file as a reference document.
-           - If the user asks for a "Résumé" and a 'summary' entry exists: Prioritize attaching it.
-
-        3. **FUZZY LOGIC & TYPOS**:
-           - Be extremely forgiving with typos (e.g., "fzik", "maths sm", "lecon", "serie", "resum").
-           - Always map intent to the closest Hub Library entry.
-
-        4. **NO-MATCH FALLBACK**:
-           - If NO relevant entry exists in the Hub for a topic:
-             * State: "This topic is not yet in our Hub database."
-             * Ask: "Would you like me to generate a lesson/exercise based on the general 1BacSM curriculum?"
-             * NEVER generate long text without this confirmation if the DB is empty for that topic.
-
-        5. **MATHEMATICAL PRECISION**:
-           - Use Unicode: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω, ⇒, ⇔, ∀, ∃, ∈, ∉.
-           - Bold vectors: **AB**.
-
-        **RESPONSE FORMAT**:
-        - Professional and concise.
-        - Commands like \`ATTACH_FILES::[...]\` MUST be at the very end.
-      `;
-
-      // 5. Call Gemini
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts: [{ text: `History:\n${recentHistory}\n\nUser Question: ${userQuery}` }] },
-        config: { 
-          systemInstruction, 
-          temperature: 0.2, 
-          tools: [{ googleSearch: {} }]
-        },
+      // 2. Perform Intelligent Lesson Search (Internal)
+      // Find a lesson that matches the user's query keywords or title
+      const normalizedQuery = userQuery.toLowerCase();
+      const matchedLesson = lessons.find(l => {
+        const titleMatch = normalizedQuery.includes(l.title.toLowerCase());
+        const keywordMatch = l.keywords?.some(k => normalizedQuery.includes(k.toLowerCase()));
+        return titleMatch || keywordMatch;
       });
 
-      let text = (response.text || "").trim();
-      let resources: any[] = [];
-      const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      // 3. Prepare Multi-modal Content (Images) if lesson found
+      let contextualMessages: any[] = [];
+      
+      if (matchedLesson) {
+        const imageAttachments = (matchedLesson.attachments || []).filter(a => a.type === 'image').slice(0, 3);
+        
+        // Build a content block with text AND image references for the LLM
+        const contentBlock: any[] = [
+          { 
+            type: "text", 
+            text: `[SYSTEM CONTEXT: DATA SOURCE ACTIVATED]
+                   The user is asking about the lesson: "${matchedLesson.title}".
+                   Lesson Description: "${matchedLesson.description}"
+                   Subject: ${subjects.find(s => s.id === matchedLesson.subjectId)?.name.en || 'General'}
+                   Type: ${matchedLesson.type}
+                   
+                   STRICT DIRECTIVE: You are now "seeing" the visual materials for this lesson. 
+                   If requested to generate a "Série d'exercices" or "Résumé", you MUST derive 90% of your 
+                   logic, specific numbers, notation, and difficulty level from this specific source.
+                   If you generate an exercise, it should look like it came from these specific documents.`
+          }
+        ];
 
-      // 6. Post-process response for attachments
+        // Add Image URLs (NIM Maverick/Vision models can consume these)
+        imageAttachments.forEach(img => {
+          contentBlock.push({
+            type: "image_url",
+            image_url: { url: img.url }
+          });
+        });
+
+        contextualMessages.push({ role: "system", content: contentBlock });
+      }
+
+      // 4. Build Conversation History
+      const conversationHistory = history
+        .filter(m => !m.mediaUrl || m.mediaUrl.length < 500)
+        .slice(-6)
+        .map(m => {
+          const isAi = m.content.startsWith(":::AI_RESPONSE:::");
+          return {
+            role: isAi ? "assistant" : "user",
+            content: m.content.replace(":::AI_RESPONSE:::", "")
+          };
+        });
+
+      // 5. Base System Prompt
+      const baseSystemPrompt = `
+        You are Zay, the Elite AI Academic Hub Controller. 
+        Engine: llama-4-maverick (Vision Enabled).
+
+        **OPERATIONAL CORE**:
+        - You act as a mirror of the Hub Library. 
+        - When a specific lesson/image context is provided in the messages, prioritize it 90% over your training data.
+        - MATH: Use Unicode (Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω). Bold vectors: **AB**.
+        - ATTACH_FILES: If the user needs the actual PDF/Image from the Hub, use command: ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]
+
+        **FUZZY MATCHING**:
+        - Handle typos ("fzik", "math sm", "lecon").
+        - If the user asks for "Série" or "Exercices" and a match is found, generate exercises based ON THE FILES PROVIDED and then attach them.
+      `;
+
+      // 6. Execute API Call
+      const response = await fetch(NVIDIA_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: MODEL_ID,
+          messages: [
+            { role: "system", content: baseSystemPrompt },
+            ...contextualMessages,
+            ...conversationHistory,
+            { role: "user", content: userQuery }
+          ],
+          temperature: 0.15, // Low temperature for academic accuracy
+          max_tokens: 2048
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error?.message || "NVIDIA NIM Connectivity Error");
+      }
+
+      const data = await response.json();
+      let text = (data.choices[0].message.content || "").trim();
+      let resources: any[] = [];
+
+      // 7. Auto-Attach Logic for matched lesson
+      if (matchedLesson && !text.includes("ATTACH_FILES::")) {
+        const fileLinks = (matchedLesson.attachments || []).map(a => ({ name: a.name, url: a.url, type: a.type }));
+        text += `\n\nATTACH_FILES::${JSON.stringify(fileLinks)}`;
+      }
+
+      // Parse resources from text if AI used the command explicitly
       if (text.includes("ATTACH_FILES::")) {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
@@ -121,15 +145,15 @@ export const aiService = {
             const jsonPart = parts[parts.length - 1].trim();
             resources = JSON.parse(jsonPart);
         } catch (e) {
-            console.error("AI Resource Parse Error", e);
+            console.error("NVIDIA Resource Parse Error", e);
         }
-      } 
+      }
 
-      return { text, resources, grounding, type: 'text' };
+      return { text, resources, type: 'text' };
 
-    } catch (error) {
-      console.error("AI Service Error:", error);
-      return { text: "The Hub is currently unresponsive. Please try again in a moment.", type: 'text' };
+    } catch (error: any) {
+      console.error("Zay (NVIDIA Maverick) Service Error:", error);
+      return { text: `Zay is currently having trouble accessing the Hub data: ${error.message}`, type: 'text' };
     }
   }
 };
