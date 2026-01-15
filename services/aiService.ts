@@ -98,7 +98,7 @@ export const aiService = {
 
       // 5. Call Gemini
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash',
+        model: 'gemini-2.5-flash',
         contents: { parts: [{ text: `History:\n${recentHistory}\n\nUser Question: ${userQuery}` }] },
         config: { 
           systemInstruction, 
