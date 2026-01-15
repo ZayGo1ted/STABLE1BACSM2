@@ -9,11 +9,13 @@ import {
   Smile, Play, Pause, File as FileIcon, Trash2,
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bot, AlertTriangle, Download, Loader2,
-  ChevronRight, CornerUpLeft, Terminal, Globe, ExternalLink
+  ChevronRight, CornerUpLeft, Terminal, Globe, ExternalLink,
+  Zap, AlertCircle
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
 const AI_PREFIX = ":::AI_RESPONSE:::";
+const DIAGNOSTIC_FLAG = "[DIAGNOSTIC ALERT]";
 
 const formatMessageContent = (text: string) => {
   const codeBlockRegex = /```([\s\S]*?)```/g;
@@ -147,10 +149,11 @@ const ChatRoom: React.FC = () => {
         const aiRes = await aiService.askZay(content, user, messages);
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
-            type: (aiRes.resources?.length || aiRes.grounding?.length) ? 'file' : 'text',
+            type: (aiRes.resources?.length || aiRes.grounding?.length || aiRes.isErrorDetection) ? 'file' : 'text',
             mediaUrl: JSON.stringify({ 
                 res: aiRes.resources || [], 
-                grounding: aiRes.grounding || [] 
+                grounding: aiRes.grounding || [],
+                isError: aiRes.isErrorDetection
             })
         });
       }
@@ -168,12 +171,17 @@ const ChatRoom: React.FC = () => {
     <div className="flex flex-col h-full bg-[#f2f6ff] relative overflow-hidden">
       {/* Header */}
       <div className="px-6 py-3 bg-white border-b border-slate-100 flex justify-between items-center z-20 shadow-sm shrink-0 h-14">
-        <div>
-          <h2 className="text-sm font-black text-slate-900 tracking-tight">{t('chat')}</h2>
-          <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5 leading-none">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-            {onlineUserIds.size} Online
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+             <Zap size={16} />
+          </div>
+          <div>
+            <h2 className="text-sm font-black text-slate-900 tracking-tight">Zay Diagnostic Hub</h2>
+            <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5 leading-none">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              {onlineUserIds.size} Active
+            </p>
+          </div>
         </div>
         {isAdmin && (
              <button onClick={async () => { if(confirm("Clear chat history?")) await supabaseService.clearChat(); }} className="p-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm">
@@ -193,11 +201,14 @@ const ChatRoom: React.FC = () => {
           
           let resources: any[] = [];
           let grounding: any[] = [];
+          let isDiagnosticError = false;
+
           if (isProxyAI && msg.mediaUrl) {
             try { 
                 const meta = JSON.parse(msg.mediaUrl); 
                 resources = meta.res || [];
                 grounding = meta.grounding || [];
+                isDiagnosticError = meta.isError || cleanContent.includes(DIAGNOSTIC_FLAG);
             } catch(e) {}
           }
 
@@ -209,14 +220,22 @@ const ChatRoom: React.FC = () => {
 
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
                   <div className={`relative px-5 py-4 shadow-sm text-xs font-medium leading-relaxed rounded-[1.8rem]
-                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-200' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/30'}`}>
+                    ${isMe ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-200' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/30'}
+                    ${isDiagnosticError ? 'border-rose-300 ring-4 ring-rose-50' : ''}`}>
                     
+                    {isDiagnosticError && (
+                        <div className="mb-3 flex items-center gap-2 p-2.5 bg-rose-50 text-rose-600 rounded-2xl border border-rose-100 animate-pulse">
+                            <AlertCircle size={14} className="shrink-0" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Diagnostic Error Detected</span>
+                        </div>
+                    )}
+
                     <div className="font-sans antialiased text-[13px]">{formatMessageContent(cleanContent)}</div>
                     
                     {grounding.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                <Globe size={12} className="text-indigo-500" /> Web Grounding
+                                <Globe size={12} className="text-indigo-500" /> Source Verification
                             </div>
                             <div className="grid grid-cols-1 gap-1.5">
                                 {grounding.map((chunk, i) => chunk.web && (
@@ -285,7 +304,7 @@ const ChatRoom: React.FC = () => {
         <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-24 md:pt-14">
                 <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-indigo-400">File Analysis Mode</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-indigo-400">Diagnostic Review</span>
                     <span className="text-sm md:text-base font-bold truncate max-w-[180px] md:max-w-md">{lightboxImage.name}</span>
                 </div>
                 <div className="flex items-center gap-2 md:gap-3">
@@ -320,7 +339,7 @@ const ChatRoom: React.FC = () => {
          <div className="flex items-end gap-3 max-w-4xl mx-auto">
             <input 
                 className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-6 py-4 outline-none text-[13px] font-bold transition-all h-14 shadow-inner"
-                placeholder={t('chat_placeholder')}
+                placeholder="Ask Zay to check your work..."
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !isSending && handleSendMessage()}
