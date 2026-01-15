@@ -165,7 +165,8 @@ const AdminPanel: React.FC<Props> = ({ items, subjects, onUpdate, initialEditIte
 
   const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-        const newFiles = Array.from(e.target.files).map(file => ({
+        // Fix: Explicitly type 'file' as File to avoid 'unknown' type errors during map and access
+        const newFiles = Array.from(e.target.files).map((file: File) => ({
             id: `new-${crypto.randomUUID()}`,
             file: file,
             url: URL.createObjectURL(file), 
