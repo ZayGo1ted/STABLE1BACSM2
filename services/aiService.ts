@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { User, ChatMessage } from '../types';
+import { User, ChatMessage, Lesson } from '../types';
 import { supabaseService } from './supabaseService';
 
 interface AiResponse {
@@ -12,8 +12,8 @@ interface AiResponse {
 }
 
 /**
- * Zay AI: Diagnostic Academic Controller
- * Model: gemini-3-flash-preview (Fast, High-Availability)
+ * Zay AI: Advanced Diagnostic Academic Layer
+ * Engine: Gemini 2.5 Flash (Latest High-Reasoning & Context-Aware)
  */
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = [], imageUrl?: string): Promise<AiResponse> => {
@@ -21,51 +21,55 @@ export const aiService = {
     
     if (!apiKey) {
       return { 
-        text: "System Alert: API Key missing. Please check environment variables.", 
+        text: "System Alert: API Key missing. AI Core is currently detached.", 
         type: 'text' 
       };
     }
 
     try {
-      // Re-initialize for every call to ensure the latest environment key is used
       const ai = new GoogleGenAI({ apiKey: apiKey });
-      const modelName = 'gemini-2.5-flash-lite';
+      const modelName = 'gemini-2.5-flash-preview';
 
-      // 1. Context Sync from Hub Library
+      // 1. Deep Context Fetching
+      // We pull EVERYTHING so the AI can "read" the whole classroom state
       const freshState = await supabaseService.fetchFullState();
-      const lessons = freshState.lessons || [];
+      const allLessons = freshState.lessons || [];
       const subjects = freshState.subjects || [];
 
-      // 2. Intelligent Context Matching
-      const normalizedQuery = userQuery.toLowerCase();
-      const matchedLesson = lessons.find(l => {
-        const titleMatch = normalizedQuery.includes(l.title.toLowerCase());
-        const keywordMatch = l.keywords?.some(k => normalizedQuery.includes(k.toLowerCase()));
-        return titleMatch || keywordMatch;
-      });
+      // 2. Comprehensive Classroom Index
+      // Map lessons to a format the AI can perfectly parse
+      const classroomContext = allLessons.map(l => ({
+        lesson_id: l.id,
+        title: l.title,
+        subject: subjects.find(s => s.id === l.subjectId)?.name.en,
+        type: l.type,
+        summary: l.description,
+        files: l.attachments || [] // Actual download links
+      }));
 
-      // 3. System Instruction optimized for Diagnostic Error Detection
+      // 3. High-Intelligence System Instruction
       const systemInstruction = `
-        You are Zay, the High-Speed Diagnostic AI for the 1BacSM Hub.
-        Engine: Google Gemini 3 Flash.
+        You are Zay, the Elite Diagnostic AI for the 1BacSM Hub.
+        Engine: Google Gemini 2.5 Flash.
 
-        **PRIMARY ROLE: ERROR DETECTOR**
-        - If the student provides a calculation or a logic step, analyze it for errors.
-        - If an error is found, start your response with: "[DIAGNOSTIC ALERT]: Error Detected in [Concept]"
-        - Explain WHY it is wrong and provide the correct scientific path.
+        **MISSION**:
+        1. **ERROR DETECTOR**: Actively hunt for mistakes in student math/physics logic. 
+           - If you find an error, use: "[DIAGNOSTIC ALERT]: Error in [Concept Name]"
+        2. **FILE INTEGRITY**: You have access to the actual Hub Library (Context below).
+           - When a user asks about a lesson, YOU MUST provide the actual file links from that lesson.
+           - DO NOT invent file names. Copy the URL and Name EXACTLY from the context.
+           - APPEND the files at the end of your message using this strict format: [ATTACH_RESOURCES: [{"name": "...", "url": "...", "type": "..."}]]
 
-        **DOMAIN: 1Bac Science Math (Physics, Math, SVT)**
-        - Use professional symbols: (Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω).
-        - Use Google Search for validating complex formulas or recent scientific data.
+        **DOMAIN KNOWLEDGE (1Bac Science Math)**:
+        - Physics: Mechanics, Electricity, Redox, Optics.
+        - Math: Logic, Sets, Functions, Trig, Sequences.
+        - Use symbols: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
 
-        **HUB INTEGRATION**:
-        - If a lesson matches the user query, append resources using: ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]
-        
-        **CURRENT CLASSROOM INDEX**:
-        ${JSON.stringify(lessons.map(l => ({ title: l.title, subject: subjects.find(s => s.id === l.subjectId)?.name.en })), null, 1)}
+        **THE ACTUAL HUB LIBRARY (READ EVERYTHING BELOW)**:
+        ${JSON.stringify(classroomContext, null, 1)}
       `;
 
-      // 4. Build Multi-modal Parts
+      // 4. Multi-modal Construction
       const parts: any[] = [{ text: userQuery }];
 
       if (imageUrl) {
@@ -81,13 +85,13 @@ export const aiService = {
         } catch (e) { console.warn("Vision input failed."); }
       }
 
-      // 5. Generate Content with Search Grounding
+      // 5. Generate Response
       const response = await ai.models.generateContent({
         model: modelName,
         contents: [{ parts }],
         config: {
           systemInstruction,
-          temperature: 0.1, // Low temperature for higher accuracy in error detection
+          temperature: 0.2, // Low temperature for high precision/consistency
           tools: [{ googleSearch: {} }]
         },
       });
@@ -97,27 +101,31 @@ export const aiService = {
       let grounding: any[] = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-      // 6. Injection of Hub Resources
-      if (matchedLesson && !text.includes("ATTACH_FILES::")) {
-        const fileLinks = (matchedLesson.attachments || []).map(a => ({ name: a.name, url: a.url, type: a.type }));
-        text += `\n\nATTACH_FILES::${JSON.stringify(fileLinks)}`;
-      }
-
-      // 7. Final Response Parsing
-      if (text.includes("ATTACH_FILES::")) {
-        const splitParts = text.split("ATTACH_FILES::");
-        text = splitParts[0].trim();
+      // 6. Extraction of the Resources JSON
+      const resourceTag = "[ATTACH_RESOURCES:";
+      if (text.includes(resourceTag)) {
+        const parts = text.split(resourceTag);
+        text = parts[0].trim();
+        const jsonStr = parts[1].split(']')[0].trim();
         try {
-          resources = JSON.parse(splitParts[splitParts.length - 1].trim());
-        } catch (e) {}
+          resources = JSON.parse(jsonStr);
+        } catch (e) {
+          console.error("Resource parsing failed:", e);
+        }
       }
 
-      return { text, resources, grounding, type: 'text', isErrorDetection };
+      return { 
+        text, 
+        resources, 
+        grounding, 
+        type: (resources.length > 0 || isErrorDetection) ? 'file' : 'text', 
+        isErrorDetection 
+      };
 
     } catch (error: any) {
-      console.error("[Zay Flash Error]:", error);
+      console.error("[Zay 2.5 Error]:", error);
       return { 
-        text: `The AI core is recharging. Please try again in a few seconds.`, 
+        text: "Zay's core is under high load. Please try again in a few seconds.", 
         type: 'text' 
       };
     }
