@@ -147,9 +147,10 @@ const ChatRoom: React.FC = () => {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
         const aiRes = await aiService.askZay(content, user, messages);
+        // Persist AI response with metadata
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
-            type: (aiRes.resources?.length || aiRes.grounding?.length || aiRes.isErrorDetection) ? 'file' : 'text',
+            type: aiRes.type,
             mediaUrl: JSON.stringify({ 
                 res: aiRes.resources || [], 
                 grounding: aiRes.grounding || [],
@@ -221,12 +222,12 @@ const ChatRoom: React.FC = () => {
                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%]`}>
                   <div className={`relative px-5 py-4 shadow-sm text-xs font-medium leading-relaxed rounded-[1.8rem]
                     ${isMe ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-200' : isBot ? 'bg-white text-slate-800 border-2 border-indigo-100 rounded-tl-none' : 'bg-white text-slate-800 rounded-tl-none shadow-indigo-100/30'}
-                    ${isDiagnosticError ? 'border-rose-300 ring-4 ring-rose-50' : ''}`}>
+                    ${isDiagnosticError ? 'border-rose-300 ring-4 ring-rose-50 shadow-rose-100' : ''}`}>
                     
                     {isDiagnosticError && (
                         <div className="mb-3 flex items-center gap-2 p-2.5 bg-rose-50 text-rose-600 rounded-2xl border border-rose-100 animate-pulse">
                             <AlertCircle size={14} className="shrink-0" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Diagnostic Error Detected</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Diagnostic Alert</span>
                         </div>
                     )}
 
@@ -235,14 +236,14 @@ const ChatRoom: React.FC = () => {
                     {grounding.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                <Globe size={12} className="text-indigo-500" /> Source Verification
+                                <Globe size={12} className="text-indigo-500" /> Grounding Evidence
                             </div>
                             <div className="grid grid-cols-1 gap-1.5">
                                 {grounding.map((chunk, i) => chunk.web && (
                                     <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-black text-indigo-700 hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm active:scale-95 group/link">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <ExternalLink size={12} className="shrink-0 text-indigo-400 group-hover/link:text-indigo-600" />
-                                            <span className="truncate">{chunk.web.title || "Reference Source"}</span>
+                                            <span className="truncate">{chunk.web.title || "Reference"}</span>
                                         </div>
                                         <ChevronRight size={14} className="shrink-0 opacity-40" />
                                     </a>
@@ -254,7 +255,7 @@ const ChatRoom: React.FC = () => {
                     {resources.length > 0 && (
                         <div className="mt-4 space-y-3 pt-2 border-t border-slate-50/50">
                             <div className="grid grid-cols-2 gap-2">
-                                {resources.filter(r => r.type === 'image').map((img, i) => (
+                                {resources.filter(r => r.type === 'image' || r.url.match(/\.(jpg|jpeg|png|webp)$/i)).map((img, i) => (
                                     <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name})}>
                                         <img src={img.url} className="w-full aspect-square object-cover" alt={img.name} />
                                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
@@ -265,16 +266,16 @@ const ChatRoom: React.FC = () => {
                             </div>
                             
                             <div className="space-y-2">
-                                {resources.filter(r => r.type !== 'image').map((file, i) => (
+                                {resources.filter(r => !r.url.match(/\.(jpg|jpeg|png|webp)$/i)).map((file, i) => (
                                     <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group/file w-full">
                                         <div className="w-10 h-10 shrink-0 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm">
                                             <FileIcon size={18} />
                                         </div>
                                         <div className="flex-1 min-w-0 flex flex-col items-start overflow-hidden">
-                                            <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || "Untitled Document"}</span>
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">PDF / DOC</span>
+                                            <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || "Hub Resource"}</span>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Download</span>
                                         </div>
-                                        <button onClick={() => forceDownload(file.url, file.name || 'document')} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0">
+                                        <button onClick={() => forceDownload(file.url, file.name || 'resource')} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0">
                                             <Download size={16} />
                                         </button>
                                     </div>
@@ -283,7 +284,7 @@ const ChatRoom: React.FC = () => {
                             
                             {resources.length > 1 && (
                                 <button onClick={() => handleDownloadAll(resources)} className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95">
-                                    <Download size={14} /> Download Package ({resources.length})
+                                    <Download size={14} /> Download All ({resources.length})
                                 </button>
                             )}
                         </div>
@@ -304,7 +305,7 @@ const ChatRoom: React.FC = () => {
         <div className="fixed inset-0 z-[500] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-6 pb-6 text-white border-b border-white/5 pt-24 md:pt-14">
                 <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-indigo-400">Diagnostic Review</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-indigo-400">Resource Review</span>
                     <span className="text-sm md:text-base font-bold truncate max-w-[180px] md:max-w-md">{lightboxImage.name}</span>
                 </div>
                 <div className="flex items-center gap-2 md:gap-3">
@@ -328,7 +329,7 @@ const ChatRoom: React.FC = () => {
                     src={lightboxImage.url} 
                     className="max-w-full max-h-[60vh] md:max-h-[80vh] object-contain rounded-[2.5rem] shadow-[0_0_120px_rgba(99,102,241,0.35)] animate-in zoom-in-95 duration-500 border border-white/10" 
                     onClick={e => e.stopPropagation()} 
-                    alt="Resource Viewer"
+                    alt="Viewer"
                 />
             </div>
         </div>
@@ -339,7 +340,7 @@ const ChatRoom: React.FC = () => {
          <div className="flex items-end gap-3 max-w-4xl mx-auto">
             <input 
                 className="flex-1 bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 border rounded-2xl px-6 py-4 outline-none text-[13px] font-bold transition-all h-14 shadow-inner"
-                placeholder="Ask Zay to check your work..."
+                placeholder="Ask Zay about a lesson or check your logic..."
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !isSending && handleSendMessage()}
