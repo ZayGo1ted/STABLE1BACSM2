@@ -27,7 +27,7 @@ export const aiService = {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const model = 'gemini-3-flash-preview';
+      const model = 'gemini-2.5-flash';
 
       // 1. Context Sync from Hub Library
       const freshState = await supabaseService.fetchFullState();
