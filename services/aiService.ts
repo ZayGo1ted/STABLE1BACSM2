@@ -1,5 +1,5 @@
 
-import OpenAI from 'openai';
+import { GoogleGenAI } from "@google/genai";
 import { User, ChatMessage } from '../types';
 import { supabaseService } from './supabaseService';
 
@@ -11,33 +11,25 @@ interface AiResponse {
 }
 
 /**
- * Zay AI: High-Performance Academic Controller
- * Powered by NVIDIA NIM (meta/llama-3.2-90b-vision-instruct)
+ * Zay AI: Advanced Gemini 3 Controller
+ * model: gemini-3-pro-preview
  */
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = [], imageUrl?: string): Promise<AiResponse> => {
-    // API_KEY must be in environment
     const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
-      console.error("[Zay] ERROR: No API Key found. Ensure 'API_KEY' environment variable is set.");
       return { 
-        text: "Configuration Error: The AI core is offline (Missing Key). Contact the developer.", 
+        text: "System Alert: The Gemini 3 AI Core is offline (Missing API_KEY). Please configure your environment.", 
         type: 'text' 
       };
     }
 
     try {
-      // NVIDIA NIM requires a specific base URL for OpenAI-compatible SDK usage
-      const client = new OpenAI({
-        apiKey: apiKey,
-        baseURL: "https://integrate.api.nvidia.com/v1",
-        dangerouslyAllowBrowser: true 
-      });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const model = 'gemini-3-flash-preview';
 
-      const MODEL_ID = "meta/llama-3.2-90b-vision-instruct";
-
-      // 1. Context Retrieval from Hub Library
+      // 1. Context Sync from Hub Library
       const freshState = await supabaseService.fetchFullState();
       const lessons = freshState.lessons || [];
       const subjects = freshState.subjects || [];
@@ -50,114 +42,102 @@ export const aiService = {
         return titleMatch || keywordMatch;
       });
 
-      // 3. Cognitive Directive (System Prompt)
-      const systemPrompt = `
-        You are Zay, the Elite AI Academic Hub Controller for 1BacSM. 
-        Engine: Llama-3.2-90b-Vision (NVIDIA NIM).
+      // 3. System Instruction
+      const systemInstruction = `
+        You are Zay, the Elite AI Controller for the 1BacSM Academic Hub.
+        Engine: Google Gemini 3 Pro.
 
-        **DIRECTIVES**:
-        1. **HUB DEPENDENCY**: Use matched lesson data to answer queries about summaries or exercises.
+        **MISSION**: You act as a perfect mirror of the Hub's Library.
+        **RULES**:
+        1. **HUB DEPENDENCY**: Use the provided library context to answer queries about lessons, summaries, or exercises.
         2. **MATH NOTATION**: Use Unicode (Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω). Bold vectors: **AB**.
-        3. **FILE ATTACHMENT**: If a lesson matches, append files using: ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]
+        3. **FILE ATTACHMENT**: If a lesson matches, you MUST append its files using: ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]
+        4. **GROUNDING**: Use Google Search for real-time information or deep academic sources outside the hub.
+
+        **HUB LIBRARY INDEX**:
+        ${JSON.stringify(lessons.map(l => ({ title: l.title, subject: subjects.find(s => s.id === l.subjectId)?.name.en })), null, 1)}
       `;
 
-      // 4. Multi-Modal String Construction (Specific to NVIDIA Vision docs)
-      // Documentation says: "When content is a string, image can be passed with <img> tags"
-      let finalPrompt = userQuery;
+      // 4. Build Multi-modal Content
+      const parts: any[] = [{ text: userQuery }];
 
-      // Add user-uploaded image
+      // User Uploaded Image
       if (imageUrl) {
-        finalPrompt += `\n<img src="${imageUrl}" />`;
+        try {
+          const response = await fetch(imageUrl);
+          const blob = await response.blob();
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+            reader.readAsDataURL(blob);
+          });
+          parts.push({
+            inlineData: {
+              data: base64,
+              mimeType: blob.type
+            }
+          });
+        } catch (e) {
+          console.warn("[Zay] Image conversion failed.");
+        }
       }
 
-      // Add auto-retrieved lesson context images
+      // Auto-Lesson Context Vision
       if (matchedLesson) {
-        const images = (matchedLesson.attachments || [])
-          .filter(a => a.type === 'image')
-          .slice(0, 3);
-        
-        images.forEach(img => {
-          finalPrompt += `\n<img src="${img.url}" />`;
-        });
-        
-        finalPrompt = `[CONTEXT: Materials for '${matchedLesson.title}' loaded]\n${finalPrompt}`;
+        const hubImages = (matchedLesson.attachments || []).filter(a => a.type === 'image').slice(0, 2);
+        for (const img of hubImages) {
+          try {
+            const res = await fetch(img.url);
+            const b = await res.blob();
+            const b64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+              reader.readAsDataURL(b);
+            });
+            parts.push({ inlineData: { data: b64, mimeType: b.type } });
+          } catch (e) {}
+        }
+        parts.unshift({ text: `[SYSTEM_CONTEXT]: Matched Hub Lesson: "${matchedLesson.title}". Analyzing library visuals...` });
       }
 
-      // 5. History Mapping (Last 10 messages for deep context)
-      const conversationHistory = history
-        .filter(m => !m.mediaUrl || m.mediaUrl.length < 500)
-        .slice(-10)
-        .map(m => {
-          const isAi = m.content.startsWith(":::AI_RESPONSE:::");
-          return {
-            role: (isAi ? "assistant" : "user") as "assistant" | "user",
-            content: m.content.replace(":::AI_RESPONSE:::", "")
-          };
-        });
-
-      // 6. Request with Advanced Error Monitoring
-      console.log(`[Zay] Transmitting to NVIDIA NIM...`);
-      
-      const response = await client.chat.completions.create({
-        model: MODEL_ID,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...conversationHistory,
-          { role: "user", content: finalPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 2048,
-        top_p: 1
+      // 5. Execute Gemini Content Generation
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: [{ parts }],
+        config: {
+          systemInstruction,
+          temperature: 0.1,
+          tools: [{ googleSearch: {} }]
+        },
       });
 
-      if (!response.choices?.length) {
-        throw new Error("NVIDIA NIM returned 200 OK but choices array is empty.");
-      }
-
-      let text = (response.choices[0].message.content || "").trim();
+      let text = response.text || "";
       let resources: any[] = [];
+      let grounding: any[] = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
-      // 7. Auto-File Injection
+      // 6. Auto-File Injection
       if (matchedLesson && !text.includes("ATTACH_FILES::")) {
         const fileLinks = (matchedLesson.attachments || []).map(a => ({ name: a.name, url: a.url, type: a.type }));
         text += `\n\nATTACH_FILES::${JSON.stringify(fileLinks)}`;
       }
 
-      // 8. Command Parsing
+      // 7. Command Parsing
       if (text.includes("ATTACH_FILES::")) {
-        const parts = text.split("ATTACH_FILES::");
-        text = parts[0].trim();
+        const splitParts = text.split("ATTACH_FILES::");
+        text = splitParts[0].trim();
         try {
-          resources = JSON.parse(parts[parts.length - 1].trim());
-        } catch (e) {
-          console.warn("[Zay] Attachment parse failed.");
-        }
+          resources = JSON.parse(splitParts[splitParts.length - 1].trim());
+        } catch (e) {}
       }
 
-      return { text, resources, type: 'text' };
+      return { text, resources, grounding, type: 'text' };
 
     } catch (error: any) {
-      // CRITICAL: Reworked Error catching for better documentation compliance
-      console.error("[Zay Diagnostic] Full Error Object:", error);
-      
-      const status = error.status || error.response?.status;
-      const body = error.response?.data || error.message;
-
-      console.error(`[Zay Diagnostic] Status: ${status} | Body:`, body);
-
-      let userMsg = "The Hub Controller (Llama-Vision) encountered an error.";
-
-      if (status === 422) {
-        userMsg = "AI Error (422): Input format rejected. Please check message structure or safety filters.";
-      } else if (status === 401) {
-        userMsg = "AI Auth Error (401): Invalid or Expired NVIDIA API Key.";
-      } else if (status === 429) {
-        userMsg = "AI Overload (429): Quota exceeded on the NVIDIA server.";
-      } else if (error.message) {
-        userMsg = `AI Error: ${error.message}`;
-      }
-
-      return { text: userMsg, type: 'text' };
+      console.error("[Zay Gemini Diagnostic]:", error);
+      return { 
+        text: `AI Intelligence Layer Error: ${error.message || "Connection failed to Gemini 3."}`, 
+        type: 'text' 
+      };
     }
   }
 };
