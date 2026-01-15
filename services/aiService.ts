@@ -28,7 +28,7 @@ export const aiService = {
 
     try {
       const ai = new GoogleGenAI({ apiKey: apiKey });
-      const modelName = 'gemini-2.5-flash-preview';
+      const modelName = 'gemini-2.5-flash-lite';
 
       // 1. Deep Context Fetching
       // We pull EVERYTHING so the AI can "read" the whole classroom state
