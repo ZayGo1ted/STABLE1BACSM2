@@ -30,8 +30,8 @@
       body {
         font-family: var(--font-primary);
         background: linear-gradient(135deg, #f0f4ff 0%, #e0e7ff 100%);
-        overflow: hidden; /* Prevent body scroll, everything handled in app */
-        height: 100dvh; /* Use dynamic viewport height for mobile */
+        overflow: hidden;
+        height: 100dvh;
         width: 100vw;
         overscroll-behavior-y: none;
       }
@@ -41,7 +41,6 @@
         width: 100%;
       }
 
-      /* Liquid Glass Utilities - Adjusted for compactness */
       .glass-panel {
         background: rgba(255, 255, 255, 0.7);
         backdrop-filter: blur(20px);
@@ -64,14 +63,6 @@
         box-shadow: 0 4px 15px rgba(99, 102, 241, 0.1);
       }
 
-      .glass-nav {
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(25px);
-        -webkit-backdrop-filter: blur(25px);
-        border-top: 1px solid rgba(255, 255, 255, 0.5);
-      }
-
-      /* Scrollbar Hiding */
       .hide-scrollbar::-webkit-scrollbar {
         display: none;
       }
@@ -98,28 +89,15 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.39.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "openai": "https://esm.sh/openai@^4.0.0",
+    "openai": "https://esm.sh/openai@^4.55.0",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
-
-    <!-- Service Worker Registration -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('SW registered'))
-            .catch(err => console.log('SW registration failed', err));
-        });
-      }
-    </script>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Main App Entry -->
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>
