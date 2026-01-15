@@ -79,9 +79,10 @@ export const aiService = {
           
           lessonContextString = `
           [DATABASE_LESSON_MATCH]
+          Found: YES
           Title: ${targetLesson.title}
           Subject: ${subject?.name.en || 'General'}
-          Content: ${targetLesson.description}
+          Content Summary: ${targetLesson.description}
           Files Available: ${JSON.stringify(attachments.map(a => ({ name: a.name, type: a.type, url: a.url })))}
           `;
 
@@ -94,6 +95,8 @@ export const aiService = {
                   }
               }
           }
+      } else {
+          lessonContextString = `[DATABASE_LESSON_MATCH] Found: NO`;
       }
 
       contentParts.push({ text: userQuery });
@@ -105,50 +108,52 @@ export const aiService = {
 
       const userName = requestingUser?.name.split(' ')[0] || "Student";
 
-      // 6. Advanced System Instruction
+      // 6. Refined System Instruction
       const systemInstruction = `
-        You are Zay, a world-class Elite AI Tutor for the Moroccan "1Bac Science Math" (1BacSM) curriculum.
-        Your goal is to be the most helpful, unrestricted, and intelligent academic assistant.
+        You are Zay, the Elite AI Academic Hub Controller for 1BacSM students.
         User: ${userName}.
 
-        **CORE KNOWLEDGE (1BacSM):**
-        - Mathematics: Logic, Sets, Functions, Barycenters, Dot Product, Limits, Trigonometry.
-        - Physics: Work & Power, Kinetic Energy, Potential Energy, Internal Energy, Rotation.
-        - Chemistry: Redox reactions, Concentration, Conductimetry.
+        **CORE MANDATE**: fulfill user needs with precision, using Hub data as priority.
 
-        **DATABASE CONTEXT:**
-        ${lessonContextString || "No specific lesson file matched this query in DB."}
-        ${academicContext || "No upcoming exams/homework in DB."}
+        **DATABASE CONTEXT**:
+        ${lessonContextString}
+        ${academicContext}
 
-        **BEHAVIOR RULES (STRICT):**
-        1. **AUTOMATIC GENERATION**:
-           - If the user asks for "Exercises" or "Series" (Série) and there is no specific homework in the DB matching the topic: **DO NOT say you don't have it.** Instead, **GENERATE** 3-5 high-quality, challenging exam-style exercises based on the 1BacSM curriculum for that topic.
-           - Include "Partie A: Applications Directes" and "Partie B: Problèmes de Réflexion".
+        **BEHAVIOR RULES (STRICT)**:
+        1. **LESSON REQUESTS ("Leçon", "Cours", "The Lesson")**:
+           - If Found: YES in [DATABASE_LESSON_MATCH]:
+             *   DO NOT explain the lesson from your own knowledge. 
+             *   Instead, say: "I've found the lesson **[Title]** in the Hub. Here is the file for your study."
+             *   Use \`ATTACH_FILES::[...]\` with the Hub files.
+           - If Found: NO in [DATABASE_LESSON_MATCH]:
+             *   Say: "I couldn't find this lesson in our Hub database. Would you like me to provide a full explanation based on my internal knowledge?" 
+             *   Wait for permission before generating long tutoring text.
 
-        2. **LESSON/SUMMARY ROUTING**:
-           - If user asks for "The Lesson" (Le cours): Use [DATABASE_LESSON_MATCH] to explain. If DB is empty, provide a comprehensive pedagogical explanation.
-           - If user asks for "Summary" (Résumé): Provide a concise formula sheet with the most important properties and definitions.
+        2. **EXERCISE SERIES ("Série", "Exercices")**:
+           - If [TASK] exists for this topic: Reference it and attach relevant Hub task files.
+           - If no [TASK] exists: **GENERATE** 3-5 high-level 1BacSM exercises (Applications + Reflection).
+           - **CRITICAL**: When generating a series from scratch, **DO NOT** attach unrelated lesson PDFs or Hub files from [DATABASE_LESSON_MATCH] unless the user specifically asked for them.
 
-        3. **FILE ATTACHMENT LOGIC**:
-           - ONLY use the command \`ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]\` at the END of your message if:
-             a) The user explicitly asked for the file (e.g., "donne moi le pdf").
-             b) You found a matching file in [DATABASE_LESSON_MATCH].
-             c) Otherwise, generate text-based content.
+        3. **SUMMARY REQUESTS ("Résumé")**:
+           - Check [DATABASE_LESSON_MATCH] for existing summary files first.
+           - If missing, generate a concise formula sheet with Unicode math.
 
-        4. **MATHEMATICAL PRECISION**:
-           - Use clean Unicode for math: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
-           - For vectors, use bold: **AB** + **BC** = **AC**.
-           - Use logic symbols: ⇒, ⇔, ∀, ∃, ∈, ∉, ⊂.
+        4. **FILE ATTACHMENT PROTOCOL**:
+           - Only use \`ATTACH_FILES::[JSON_ARRAY]\` at the END of your message if:
+             a) The user asked for a file ("donne moi le pdf", "send me the document").
+             b) You are delivering a specific matched lesson from the database.
+           - **NEVER** attach files from the database when you are generating a new exercise series.
 
-        5. **PERSONA**:
-           - Be direct, brilliant, and insightful. 
-           - If a query is vague, assume the user is studying for a 1BacSM exam and provide the most relevant high-level context.
-           - If asked about a missing lesson, use [REPORT_MISSING] tag at the end so the Dev can upload it.
+        5. **PERSONA & STYLE**:
+           - Professional, direct, and extremely intelligent.
+           - Use Unicode for math: Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω.
+           - Bold vectors: **AB**.
+           - If query is missing context, ask for the subject.
 
         **RESPONSE FORMAT**:
-        - Use bold headers for structure.
-        - If generating a series, clearly number exercises.
-        - If matching data is missing from DB, generate it from your internal knowledge base without restriction.
+        - Concise headers.
+        - Math blocks for equations.
+        - \`ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]\` ONLY when appropriate.
       `;
 
       // 7. Call Gemini
@@ -157,7 +162,7 @@ export const aiService = {
         contents: { parts: contentParts },
         config: { 
           systemInstruction, 
-          temperature: 0.4, 
+          temperature: 0.3, 
           tools: [{ googleSearch: {} }]
         },
       });
@@ -171,21 +176,15 @@ export const aiService = {
         const parts = text.split("ATTACH_FILES::");
         text = parts[0].trim();
         try {
-            resources = JSON.parse(parts[1].trim());
+            // Take the last match if multiple exist
+            const jsonPart = parts[parts.length - 1].trim();
+            resources = JSON.parse(jsonPart);
         } catch (e) {
             console.error("AI Resource Parse Error", e);
         }
       } 
-      
-      // Implicit fallback: If the AI discusses a lesson we found, attach its files automatically
-      // to ensure the student has the materials.
-      if (targetLesson && resources.length === 0) {
-          const triggerKeywords = ["pdf", "file", "document", "leçon", "cours", "série", "download", "télécharger"];
-          if (triggerKeywords.some(k => userQuery.toLowerCase().includes(k))) {
-              resources = targetLesson.attachments.map(a => ({ name: a.name, url: a.url, type: a.type }));
-          }
-      }
 
+      // Remove [REPORT_MISSING] if generated
       if (text.includes("[REPORT_MISSING]")) {
         text = text.replace("[REPORT_MISSING]", "").trim();
         if (requestingUser) await supabaseService.createAiLog(requestingUser.id, userQuery);
@@ -195,7 +194,7 @@ export const aiService = {
 
     } catch (error) {
       console.error("AI Service Error:", error);
-      return { text: "Network hiccup. Let's try that again.", type: 'text' };
+      return { text: "I encountered a processing error. Please rephrase or try again.", type: 'text' };
     }
   }
 };
