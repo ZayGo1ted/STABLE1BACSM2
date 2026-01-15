@@ -216,13 +216,16 @@ const ChatRoom: React.FC = () => {
                     {grounding.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                <Globe size={12} className="text-indigo-500" /> Sources
+                                <Globe size={12} className="text-indigo-500" /> Web Grounding
                             </div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="grid grid-cols-1 gap-1.5">
                                 {grounding.map((chunk, i) => chunk.web && (
-                                    <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm active:scale-95">
-                                        <ExternalLink size={11} />
-                                        <span className="truncate max-w-[140px]">{chunk.web.title || "Reference Link"}</span>
+                                    <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-black text-indigo-700 hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm active:scale-95 group/link">
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <ExternalLink size={12} className="shrink-0 text-indigo-400 group-hover/link:text-indigo-600" />
+                                            <span className="truncate">{chunk.web.title || "Reference Source"}</span>
+                                        </div>
+                                        <ChevronRight size={14} className="shrink-0 opacity-40" />
                                     </a>
                                 ))}
                             </div>
