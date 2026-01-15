@@ -8,11 +8,12 @@ interface AiResponse {
   resources?: any[];
   grounding?: any[];
   type: 'text' | 'image' | 'file';
+  isErrorDetection?: boolean;
 }
 
 /**
- * Zay AI: Elite Academic Intelligence Layer
- * Engine: gemini-3-pro-preview (Superior Successor to 1.5 Pro)
+ * Zay AI: Diagnostic Academic Controller
+ * Model: gemini-3-flash-preview (Fast, High-Availability)
  */
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = [], imageUrl?: string): Promise<AiResponse> => {
@@ -20,7 +21,7 @@ export const aiService = {
     
     if (!apiKey) {
       return { 
-        text: "System Alert: Gemini 3 Pro Engine is currently offline. Please check your Hub configuration.", 
+        text: "System Alert: API Key missing. Please check environment variables.", 
         type: 'text' 
       };
     }
@@ -43,19 +44,24 @@ export const aiService = {
         return titleMatch || keywordMatch;
       });
 
-      // 3. System Instruction for High-Level Science/Math
+      // 3. System Instruction optimized for Diagnostic Error Detection
       const systemInstruction = `
-        You are Zay, the Elite Academic Intelligence for the 1BacSM Hub.
-        Engine: Google Gemini 3 Pro (High Reasoning).
+        You are Zay, the High-Speed Diagnostic AI for the 1BacSM Hub.
+        Engine: Google Gemini 3 Flash.
 
-        **GOAL**: Act as a perfect tutor and knowledge bridge for Science-Math students.
-        **RULES**:
-        1. **LIBRARY FIRST**: Prioritize using the provided Hub context for lesson data.
-        2. **MATH PRECISION**: Use professional Unicode symbols (Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω).
-        3. **LINKING**: If a lesson matches, append files using: ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]
-        4. **GROUNDING**: Leverage Google Search for deep scientific validation and real-time facts.
+        **PRIMARY ROLE: ERROR DETECTOR**
+        - If the student provides a calculation or a logic step, analyze it for errors.
+        - If an error is found, start your response with: "[DIAGNOSTIC ALERT]: Error Detected in [Concept]"
+        - Explain WHY it is wrong and provide the correct scientific path.
 
-        **CURRENT HUB CONTEXT**:
+        **DOMAIN: 1Bac Science Math (Physics, Math, SVT)**
+        - Use professional symbols: (Δ, ∑, ∫, √, ∞, ≠, ≤, ≥, ±, α, β, θ, λ, π, Ω).
+        - Use Google Search for validating complex formulas or recent scientific data.
+
+        **HUB INTEGRATION**:
+        - If a lesson matches the user query, append resources using: ATTACH_FILES::[{"name": "...", "url": "...", "type": "..."}]
+        
+        **CURRENT CLASSROOM INDEX**:
         ${JSON.stringify(lessons.map(l => ({ title: l.title, subject: subjects.find(s => s.id === l.subjectId)?.name.en })), null, 1)}
       `;
 
@@ -75,13 +81,13 @@ export const aiService = {
         } catch (e) { console.warn("Vision input failed."); }
       }
 
-      // 5. Execute Pro-grade content generation
+      // 5. Generate Content with Search Grounding
       const response = await ai.models.generateContent({
         model: modelName,
         contents: [{ parts }],
         config: {
           systemInstruction,
-          temperature: 0.3, 
+          temperature: 0.1, // Low temperature for higher accuracy in error detection
           tools: [{ googleSearch: {} }]
         },
       });
@@ -89,14 +95,15 @@ export const aiService = {
       let text = response.text || "";
       let resources: any[] = [];
       let grounding: any[] = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-      // 6. Injection of Hub Resources if matched
+      // 6. Injection of Hub Resources
       if (matchedLesson && !text.includes("ATTACH_FILES::")) {
         const fileLinks = (matchedLesson.attachments || []).map(a => ({ name: a.name, url: a.url, type: a.type }));
         text += `\n\nATTACH_FILES::${JSON.stringify(fileLinks)}`;
       }
 
-      // 7. Parse the output for the Chat UI
+      // 7. Final Response Parsing
       if (text.includes("ATTACH_FILES::")) {
         const splitParts = text.split("ATTACH_FILES::");
         text = splitParts[0].trim();
@@ -105,12 +112,12 @@ export const aiService = {
         } catch (e) {}
       }
 
-      return { text, resources, grounding, type: 'text' };
+      return { text, resources, grounding, type: 'text', isErrorDetection };
 
     } catch (error: any) {
-      console.error("[Zay Pro Error]:", error);
+      console.error("[Zay Flash Error]:", error);
       return { 
-        text: `Gemini Pro engine is currently under high load. Please retry your query in 10 seconds.`, 
+        text: `The AI core is recharging. Please try again in a few seconds.`, 
         type: 'text' 
       };
     }
