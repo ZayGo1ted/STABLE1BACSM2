@@ -279,24 +279,31 @@ Current Student: ${requestingUser?.name || 'Student'}
       });
     }
 
-    // --- Resource Parsing ---
-    let resources: any[] = [];
-    let grounding: any[] = [];
-    const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
+// --- Resource Parsing ---
+let resources: any[] = [];
+let grounding: any[] = [];
+const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-    const tag = "[ATTACH_RESOURCES:";
-    if (text.includes(tag)) {
-      const parts = text.split(tag);
-      text = parts[0].trim();
-      const jsonStr = parts[1].split(']')[0].trim();
-      try {
-        resources = JSON.parse(jsonStr);
-      } catch (e) {
-        console.error("JSON Parse Error in AI response", e);
-        text += "\n\n[Error parsing attached resources.]";
-      }
+const tag = "[ATTACH_RESOURCES:";
+if (text.includes(tag)) {
+  const parts = text.split(tag);
+  text = parts[0].trim();
+  const jsonStr = parts[1].split(']')[0].trim();
+  try {
+    const parsedResources = JSON.parse(jsonStr);
+    // Validate that resources is an array and each resource has required properties
+    if (Array.isArray(parsedResources)) {
+      resources = parsedResources.map(resource => ({
+        name: resource.name || resource.title || 'Unnamed Resource',
+        url: resource.url || '',
+        type: resource.type || (resource.url && resource.url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? 'image' : 'file')
+      })).filter(resource => resource.url); // Only include resources with valid URLs
     }
-
+  } catch (e) {
+    console.error("JSON Parse Error in AI response", e);
+    text += "\n\n[Error parsing attached resources.]";
+  }
+}
     // --- Respond to Client ---
     const finalResponse: AiResponse = {
       text,
