@@ -3,14 +3,15 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, (process as any).cwd(), '');
+  // Load environment variables from `.env` files based on `mode` (development, production)
+  const env = loadEnv(mode, process.cwd(), ''); // Loads all vars, not just prefixed ones
 
   return {
     plugins: [react()],
     define: {
-      // Change this line to use NVIDIA_API_KEY
+      // Inject the NVIDIA_API_KEY at build time
+      // If not found in .env or system env, it will be undefined in the client
       'process.env.NVIDIA_API_KEY': JSON.stringify(env.NVIDIA_API_KEY || process.env.NVIDIA_API_KEY)
     }
   };
 });
-
