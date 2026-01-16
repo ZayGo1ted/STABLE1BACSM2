@@ -1,4 +1,4 @@
-
+// package.json (No changes needed if only using fetch)
 {
   "name": "classhub-1bacsm",
   "private": true,
@@ -13,8 +13,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "lucide-react": "^0.378.0",
-    "@supabase/supabase-js": "^2.43.2",
-    "@google/genai": "latest"
+    "@supabase/supabase-js": "^2.43.2"
+    // Removed: "@google/genai": "latest"
+    // No need to add axios or similar unless preferred for complexity
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
