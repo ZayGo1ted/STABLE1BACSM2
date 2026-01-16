@@ -29,13 +29,12 @@ export const aiService = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // No Authorization header needed for internal API routes typically
         },
         body: JSON.stringify({
           userQuery,
           requestingUser,
           history,
-          imageUrl // Pass through, even if not used yet
+          imageUrl
         }),
       });
 
@@ -49,6 +48,13 @@ export const aiService = {
       }
 
       const aiResponse: AiResponse = await response.json();
+      
+      // Fix: Properly handle resources parsing
+      if (aiResponse.resources && Array.isArray(aiResponse.resources)) {
+        // Resources are already parsed correctly from the backend
+        return aiResponse;
+      }
+      
       return aiResponse;
 
     } catch (error: any) {
