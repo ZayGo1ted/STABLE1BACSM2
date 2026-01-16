@@ -1,4 +1,4 @@
-
+// components/ChatRoom.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../AuthContext';
 import { supabaseService, getSupabase } from '../services/supabaseService';
@@ -254,37 +254,49 @@ const ChatRoom: React.FC = () => {
 
                     {resources.length > 0 && (
                         <div className="mt-4 space-y-3 pt-2 border-t border-slate-50/50">
-                            <div className="grid grid-cols-2 gap-2">
-                                {resources.filter(r => r.type === 'image' || r.url.match(/\.(jpg|jpeg|png|webp)$/i)).map((img, i) => (
-                                    <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name})}>
-                                        <img src={img.url} className="w-full aspect-square object-cover" alt={img.name} />
-                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                                            <div className="p-2 bg-white/20 backdrop-blur-md rounded-lg text-white"><Maximize2 size={20} /></div>
+                            {resources.filter(r => r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i))).length > 0 && (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {resources.filter(r => r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i))).map((img, i) => (
+                                        <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name || img.title || `Image ${i+1}`})}>
+                                            <img src={img.url} className="w-full aspect-square object-cover" alt={img.name || img.title || `Image ${i+1}`} loading="lazy" />
+                                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                                <div className="p-2 bg-white/20 backdrop-blur-md rounded-lg text-white"><Maximize2 size={20} /></div>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                             
-                            <div className="space-y-2">
-                                {resources.filter(r => !r.url.match(/\.(jpg|jpeg|png|webp)$/i)).map((file, i) => (
-                                    <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group/file w-full">
-                                        <div className="w-10 h-10 shrink-0 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm">
-                                            <FileIcon size={18} />
+                            {resources.filter(r => !(r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i)))).length > 0 && (
+                                <div className="space-y-2">
+                                    {resources.filter(r => !(r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i)))).map((file, i) => (
+                                        <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group/file w-full">
+                                            <div className="w-10 h-10 shrink-0 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm">
+                                                <FileIcon size={18} />
+                                            </div>
+                                            <div className="flex-1 min-w-0 flex flex-col items-start overflow-hidden">
+                                                <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || file.title || "Hub Resource"}</span>
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Download</span>
+                                            </div>
+                                            <button 
+                                                onClick={() => forceDownload(file.url, file.name || file.title || `resource-${i}`)} 
+                                                className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0"
+                                                disabled={!file.url}
+                                            >
+                                                <Download size={16} />
+                                            </button>
                                         </div>
-                                        <div className="flex-1 min-w-0 flex flex-col items-start overflow-hidden">
-                                            <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || "Hub Resource"}</span>
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Download</span>
-                                        </div>
-                                        <button onClick={() => forceDownload(file.url, file.name || 'resource')} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0">
-                                            <Download size={16} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                             
-                            {resources.length > 1 && (
-                                <button onClick={() => handleDownloadAll(resources)} className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95">
-                                    <Download size={14} /> Download All ({resources.length})
+                            {resources.filter(r => r.url).length > 1 && (
+                                <button 
+                                    onClick={() => handleDownloadAll(resources.filter(r => r.url))} 
+                                    className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95"
+                                    disabled={resources.filter(r => r.url).length === 0}
+                                >
+                                    <Download size={14} /> Download All ({resources.filter(r => r.url).length})
                                 </button>
                             )}
                         </div>
