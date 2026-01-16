@@ -1,9 +1,9 @@
 // api/askZay.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
-import { supabaseService } from '../../services/supabaseService'; // Adjust path as needed
-import { ZAY_USER_ID } from '../../constants'; // Adjust path as needed
-import { User, ChatMessage } from '../../types'; // Adjust path as needed
+import { supabaseService } from '../services/supabaseService'; // One level up, then into services
+import { ZAY_USER_ID } from '../constants';                   // One level up
+import { User, ChatMessage } from '../types';     
 
 // IMPORTANT: These types/interfaces should ideally be shared or defined here
 // to avoid importing from the client bundle if possible.
