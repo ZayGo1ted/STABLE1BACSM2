@@ -1,5 +1,7 @@
 // services/aiService.ts
-// import { GoogleGenAI } from "@google/genai"; // <-- REMOVE THIS IMPORT
+import OpenAI from 'openai'; // <-- ADD THIS IMPORT
+// Remove the old Google GenAI import
+// import { GoogleGenAI } from "@google/genai";
 import { User, ChatMessage, Lesson, AcademicItem } from '../types';
 import { supabaseService } from './supabaseService';
 import { ZAY_USER_ID } from '../constants';
@@ -9,20 +11,19 @@ const AI_PREFIX = ":::AI_RESPONSE:::";
 interface AiResponse {
   text: string;
   resources?: any[];
-  grounding?: any[]; // May be less detailed than Google's
+  grounding?: any[];
   type: 'text' | 'image' | 'file';
   isErrorDetection?: boolean;
 }
 
 /**
  * Zay AI: Advanced Diagnostic & Resource Layer
- * Engine: NVIDIA NIM (e.g., meta/llama3-70b-instruct)
+ * Engine: NVIDIA NIM (using OpenAI SDK)
  *
  * *** REQUIREMENTS FOR FULL FUNCTIONALITY ***
  * 1. NVIDIA API Key stored in environment variable `NVIDIA_API_KEY`.
- * 2. Correct `NVIDIA_NIM_ENDPOINT` defined below.
- * 3. Network access from your deployment environment (Vercel) to the NVIDIA endpoint.
- * 4. (Optional but Recommended) Move this logic to a Vercel Serverless Function for security.
+ * 2. Network access from your deployment environment (Vercel) to https://integrate.api.nvidia.com
+ * 3. (Optional but Recommended) Move this logic to a Vercel Serverless Function for security.
  */
 export const aiService = {
   askZay: async (userQuery: string, requestingUser: User | null, history: ChatMessage[] = [], imageUrl?: string): Promise<AiResponse> => {
@@ -31,6 +32,7 @@ export const aiService = {
     const apiKey = process.env.NVIDIA_API_KEY; 
 
     if (!apiKey) {
+      console.error("NVIDIA_API_KEY is not configured.");
       return {
         text: "Configuration Error: NVIDIA API Key (NVIDIA_API_KEY) is missing.",
         type: 'text'
@@ -64,8 +66,9 @@ export const aiService = {
       // 3. Process History (Unchanged)
       const contextHistory = history.slice(-15).map(msg => {
         const isAI = msg.userId === ZAY_USER_ID || msg.content.startsWith(AI_PREFIX);
+        // Convert to OpenAI message format
         return {
-          role: isAI ? 'assistant' : 'user',
+          role: isAI ? 'assistant' : 'user' as const, // 'as const' helps TS infer literal types
           content: msg.content.replace(AI_PREFIX, '')
         };
       });
@@ -98,52 +101,47 @@ ${JSON.stringify(activeHomework, null, 1)}
 Current Student: ${requestingUser?.name || 'Student'}
 `;
 
-      // 5. Prepare Messages (Standard format for chat models)
-      const messagesForModel = [
+      // 5. Prepare Messages for OpenAI SDK
+      // OpenAI expects an array like [{role: "system", content: "..."}, {role: "user", content: "..."}, ...]
+      const messagesForModel: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: "system", content: systemInstruction },
         ...contextHistory,
         { role: "user", content: userQuery }
       ];
 
-      // *** CHANGE 2: NVIDIA NIM API CALL ***
-      // IMPORTANT: UPDATE THIS ENDPOINT WITH THE CORRECT ONE FROM NVIDIA DOCUMENTATION
-      // Example placeholder for a hosted NVIDIA NIM service endpoint:
-      const NVIDIA_NIM_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"; // <--- YOU MUST CHANGE THIS
+      // *** CHANGE 2: Initialize OpenAI Client for NVIDIA NIM ***
+      const openai = new OpenAI({
+        apiKey: apiKey,
+        baseURL: 'https://integrate.api.nvidia.com/v1', // Standard NVIDIA NIM v1 endpoint
+      });
 
-      const requestBody = {
-        model: "meta/llama3-70b-instruct", // <--- UPDATE MODEL NAME IF DIFFERENT
+      // *** CHANGE 3: Make the Completion Request using OpenAI SDK ***
+      const completion = await openai.chat.completions.create({
+        model: "meta/llama3-70b-instruct", // Specify the model
         messages: messagesForModel,
         temperature: 0.15,
         top_p: 1,
         max_tokens: 1024,
-        stream: false
-      };
-
-      // Make the API call using fetch
-      const response = await fetch(NVIDIA_NIM_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`, // Standard Bearer Token Auth
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
+        stream: false, // Set to true if you want to handle streaming (more complex)
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`NVIDIA NIM API Error (${response.status}):`, errorText);
-        throw new Error(`NVIDIA API request failed with status ${response.status}`);
+      // 6. Process the Response (OpenAI format)
+      let text = completion.choices?.[0]?.message?.content?.trim() || "";
+      
+      if (!text) {
+         console.warn("Received empty response content from NVIDIA NIM.");
+         return {
+            text: "The AI model returned an empty response. Please try rephrasing your question.",
+            type: 'text'
+         };
       }
 
-      const data = await response.json();
-
-      // 6. Process Response (Similar structure expected)
-      let text = data.choices?.[0]?.message?.content?.trim() || "";
+      // Initialize response parts (same as before)
       let resources: any[] = [];
-      let grounding: any[] = []; // Simplified
+      let grounding: any[] = [];
       const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-      // 7. Parse Resources (Unchanged logic)
+      // 7. Parse Resources (Same parsing logic as before)
       const tag = "[ATTACH_RESOURCES:";
       if (text.includes(tag)) {
         const parts = text.split(tag);
@@ -157,6 +155,7 @@ Current Student: ${requestingUser?.name || 'Student'}
         }
       }
 
+      // 8. Return Structured Response
       return {
         text,
         resources,
@@ -166,9 +165,31 @@ Current Student: ${requestingUser?.name || 'Student'}
       };
 
     } catch (error: any) {
-      console.error("[Zay NIM Service Error]:", error);
+      console.error("[Zay NIM Service Error via OpenAI SDK]:", error);
+      
+      // Provide a more user-friendly and informative fallback message
+      let userMessage = "My neural processor (NVIDIA NIM) is temporarily offline. Please try your request again shortly.";
+      
+      // Check for common error types (error might be an OpenAI APIError object)
+      if (error instanceof OpenAI.APIError) {
+        console.error("OpenAI API Error Details:", error.status, error.message, error.type, error.code, error.param);
+        if (error.status === 401) {
+          userMessage = "Authentication with the AI service failed. (Invalid API Key)";
+        } else if (error.status === 404) {
+          userMessage = "Requested AI model or resource was not found. Please check the model name or endpoint.";
+        } else if (error.status === 429) {
+          userMessage = "Rate limit exceeded for the AI service. Please wait before trying again.";
+        } else if (error.status >= 500) {
+          userMessage = "The AI service is currently experiencing technical difficulties. Please try again later.";
+        } else {
+          userMessage = `An unexpected error occurred (${error.status}). Details: ${error.message.substring(0, 100)}...`;
+        }
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+         userMessage = "Could not connect to the AI service endpoint. Please check network connectivity.";
+      }
+
       return {
-        text: "My neural processor (NVIDIA NIM) is temporarily offline. Please try your request again shortly.",
+        text: userMessage,
         type: 'text'
       };
     }
