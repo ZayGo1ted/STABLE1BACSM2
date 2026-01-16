@@ -31,7 +31,7 @@ export const aiService = {
 
     try {
       const ai = new GoogleGenAI({ apiKey: apiKey });
-      const modelName = 'gemini-2.5-flash';
+      const modelName = 'gemini-3-flash';
 
       // 1. Fetch Comprehensive State
       const freshState = await supabaseService.fetchFullState();
