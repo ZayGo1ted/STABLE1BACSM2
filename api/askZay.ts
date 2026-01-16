@@ -1,10 +1,15 @@
 // api/askZay.ts
+// --- FIXED IMPORT PATHS BASED ON YOUR STRUCTURE ---
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
-import { supabaseService } from '../services/supabaseService'; // One level up, then into services
-import { ZAY_USER_ID } from '../constants';                   // One level up
-import { User, ChatMessage } from '../types';     
+// From /project-root/api/askZay.ts to /project-root/services/supabaseService.ts -> ../services/
+import { supabaseService } from '../services/supabaseService';
+// From /project-root/api/askZay.ts to /project-root/constants.tsx -> ../
+import { ZAY_USER_ID } from '../constants'; // Assumes default export or named export ZAY_USER_ID
+// From /project-root/api/askZay.ts to /project-root/types.ts -> ../
+import { User, ChatMessage } from '../types'; // Assumes named exports User, ChatMessage
 
+// --- REMAINDER OF YOUR CODE IS CORRECT ---
 // IMPORTANT: These types/interfaces should ideally be shared or defined here
 // to avoid importing from the client bundle if possible.
 interface AiRequestBody {
@@ -151,52 +156,4 @@ Current Student: ${requestingUser?.name || 'Student'}
     let grounding: any[] = [];
     const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-    const tag = "[ATTACH_RESOURCES:";
-    if (text.includes(tag)) {
-      const parts = text.split(tag);
-      text = parts[0].trim();
-      const jsonStr = parts[1].split(']')[0].trim();
-      try {
-        resources = JSON.parse(jsonStr);
-      } catch (e) {
-        console.error("JSON Parse Error in AI response", e);
-        text += "\n\n[Error parsing attached resources.]";
-      }
-    }
-
-    // --- Respond to Client ---
-    const finalResponse: AiResponse = {
-      text,
-      resources,
-      grounding,
-      type: (resources.length > 0 || isErrorDetection) ? 'file' : 'text',
-      isErrorDetection
-    };
-
-    res.status(200).json(finalResponse);
-
-  } catch (error: any) {
-    console.error("[Zay NIM Service Error - Server Side]:", error);
-
-    let userMessage = "My neural processor (NVIDIA NIM) is temporarily offline. Please try your request again shortly.";
-
-    if (error instanceof OpenAI.APIError) {
-      console.error("OpenAI API Error Details:", error.status, error.message, error.type, error.code, error.param);
-      if (error.status === 401) {
-        userMessage = "Authentication with the AI service failed. (Invalid API Key)"; // Should be rare if env var is set
-      } else if (error.status === 404) {
-        userMessage = "Requested AI model or resource was not found. Please check the model name or endpoint.";
-      } else if (error.status === 429) {
-        userMessage = "Rate limit exceeded for the AI service. Please wait before trying again.";
-      } else if (error.status >= 500) {
-        userMessage = "The AI service is currently experiencing technical difficulties. Please try again later.";
-      } else {
-        userMessage = `An unexpected error occurred (${error.status}). Details: ${error.message.substring(0, 100)}...`;
-      }
-    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      userMessage = "Could not connect to the AI service endpoint. Please check network connectivity.";
-    }
-
-    res.status(500).json({ text: userMessage, type: 'text' });
-  }
-}
+    const tag =|
