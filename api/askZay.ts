@@ -1,13 +1,13 @@
 // api/askZay.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
-// Assuming this file is at /api/askZay.ts
-// Target file is at /services/supabaseService.ts -> ../services/
-import { supabaseService } from '../services/supabaseService';
-// Target file is at /constants.tsx -> ../
-import { ZAY_USER_ID } from '../constants';
-// Target file is at /types.ts -> ../
-import { User, ChatMessage } from '../types';
+// Add .ts extension to help Node.js resolver
+import { supabaseService } from '../services/supabaseService.ts';
+import { ZAY_USER_ID } from '../constants.tsx'; // Add .tsx for constants
+import { User, ChatMessage } from '../types.ts'; // Add .ts for types
+
+// ... (rest of your existing code remains exactly the same) ...
+
 
 // IMPORTANT: These types/interfaces should ideally be shared or defined here
 // to avoid importing from the client bundle if possible.
