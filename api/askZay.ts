@@ -1,4 +1,4 @@
-// api/askZay.ts
+// api/askZay.ts (CORRECTED VERSION)
 // --- INLINED DEPENDENCIES TO FIX MODULE_NOT_FOUND ---
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
@@ -226,26 +226,23 @@ You are Zay, the Smart Diagnostic Assistant for the 1BacSM Hub.
 Engine: NVIDIA NIM (e.g., meta/llama3-70b-instruct).
 
 **BEHAVIORAL RULES**:
-1. **MEMORY**: Always refer back to history if the user says "it", "that", or "him".
-2. **FILE DELIVERY**: If a user asks for a lesson, you MUST find the match in HUB_LIBRARY and send the REAL links.
-   USE TAG: [ATTACH_RESOURCES: JSON_ARRAY]
-   NEVER invent links. If it's in the DB, send the actual attachment objects.
-3. **NO-HOMEWORK LOGIC**: 
-   If a student asks for "exercises" or "homework" for a specific lesson:
-   - Check HUB_LIBRARY (attachments) and ACTIVE_HOMEWORK list.
-   - If there are NO assigned files or homework items for that specific lesson, you MUST say:
-     "I found 0 assigned homeworks for [Lesson Name] in the Hub. Would you like me to generate an AI-powered exercise series based on the resources available in the database for this lesson?"
-4. **DIAGNOSTICS**: If a student shows math/physics work, check for errors.
+1. **DIAGNOSTICS**: If the student provides math/physics steps, verify the logic. 
    Prefix errors with: "[DIAGNOSTIC ALERT]: Error in [Concept]"
+2. **FILE DELIVERY**: If a user asks for a lesson or files, find the match in HUB_LIBRARY.
+   You MUST use this EXACT tag format: [ATTACH_RESOURCES: JSON_ARRAY]
+   CRITICAL: The JSON_ARRAY must be strictly valid JSON. Do NOT use markdown code blocks (\` \` \`) inside the tag. Do NOT include trailing commas.
+3. **NO-HOMEWORK FALLBACK**: If a student asks for "exercises" or "homework" for a lesson and there are 0 official tasks in ACTIVE_HOMEWORK or HUB_LIBRARY, you MUST say:
+   "I found 0 assigned homeworks for [Lesson Name] in the Hub. Since you have no official tasks yet, would you like me to generate an AI-powered exercise series based on the resources available in the database for this lesson?"
+4. **MEMORY**: Always refer back to history if the user says "it", "that", or "him".
 
 **HUB_LIBRARY**:
 ${JSON.stringify(hubLibrary, null, 1)}
 
-**ACTIVE_HOMEWORK (Official Tasks)**:
+**ACTIVE_HOMEWORK**:
 ${JSON.stringify(activeHomework, null, 1)}
 
-**USER CONTEXT**:
-Current Student: ${requestingUser?.name || 'Student'}
+**STUDENT**:
+Name: ${requestingUser?.name || 'Student'}
 `;
 
     const messagesForModel: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -270,47 +267,40 @@ Current Student: ${requestingUser?.name || 'Student'}
     });
 
     let text = completion.choices?.[0]?.message?.content?.trim() || "";
+    let resources: any[] = [];
+    let grounding: any[] = [];
+    const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
 
-    if (!text) {
-      console.warn("Received empty response content from NVIDIA NIM.");
-      return res.status(200).json({
-        text: "The AI model returned an empty response. Please try rephrasing your question.",
-        type: 'text'
-      });
+    // --- ROBUST RESOURCE PARSING (MATCHES ORIGINAL LOGIC) ---
+    const tag = "[ATTACH_RESOURCES:";
+    const tagIndex = text.indexOf(tag);
+    if (tagIndex !== -1) {
+      const afterTag = text.substring(tagIndex + tag.length);
+      const closingBracketIndex = afterTag.lastIndexOf(']');
+      
+      if (closingBracketIndex !== -1) {
+        const jsonStr = afterTag.substring(0, closingBracketIndex).trim();
+        // Remove potential markdown code block markers if the AI ignored instructions
+        const cleanJson = jsonStr.replace(/```json|```/g, '').trim();
+        
+        try {
+          resources = JSON.parse(cleanJson);
+          // Clean up text by removing the tag portion
+          text = text.substring(0, tagIndex).trim();
+        } catch (e) {
+          console.error("[Zay] Resource extraction error:", e, "Payload:", cleanJson);
+          text += `\n\n[Error parsing attached resources: ${e instanceof Error ? e.message : 'Unknown error'}]`;
+        }
+      }
     }
 
-// --- Resource Parsing ---
-let resources: any[] = [];
-let grounding: any[] = [];
-const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
-
-const tag = "[ATTACH_RESOURCES:";
-if (text.includes(tag)) {
-  const parts = text.split(tag);
-  text = parts[0].trim();
-  const jsonStr = parts[1].split(']')[0].trim();
-  try {
-    const parsedResources = JSON.parse(jsonStr);
-    // Validate that resources is an array and each resource has required properties
-    if (Array.isArray(parsedResources)) {
-      resources = parsedResources.map(resource => ({
-        name: resource.name || resource.title || 'Unnamed Resource',
-        url: resource.url || '',
-        type: resource.type || (resource.url && resource.url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? 'image' : 'file')
-      })).filter(resource => resource.url); // Only include resources with valid URLs
-    }
-  } catch (e) {
-    console.error("JSON Parse Error in AI response", e);
-    text += "\n\n[Error parsing attached resources.]";
-  }
-}
     // --- Respond to Client ---
-    const finalResponse: AiResponse = {
-      text,
-      resources,
-      grounding,
-      type: (resources.length > 0 || isErrorDetection) ? 'file' : 'text',
-      isErrorDetection
+    const finalResponse: AiResponse = { 
+      text, 
+      resources, 
+      grounding, 
+      type: (resources.length > 0 || isErrorDetection) ? 'file' : 'text', 
+      isErrorDetection 
     };
 
     res.status(200).json(finalResponse);
@@ -340,4 +330,3 @@ if (text.includes(tag)) {
     res.status(500).json({ text: userMessage, type: 'text' });
   }
 }
-// --- END OF FILE ---
