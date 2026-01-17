@@ -1,150 +1,64 @@
 // services/aiService.ts
-import { User, ChatMessage } from '../types';
+import { ChatMessage, User } from '../types';
 
-const AI_PREFIX = ":::AI_RESPONSE:::";
-
-interface AiResponse {
-  text: string;
-  resources?: any[];
-  grounding?: any[];
-  type: 'text' | 'image' | 'file';
-  isErrorDetection?: boolean;
-}
-
-/**
- * Zay AI: Frontend proxy using Puter.js for free unlimited OpenAI API access
- * Supports GPT-5, GPT-4 Vision, and multimodal capabilities
- */
 export const aiService = {
+  /**
+   * Main function to interact with Zay. 
+   * Uses GPT-5.2 Pro via Puter.js for high-level reasoning.
+   */
   askZay: async (
     userQuery: string,
-    requestingUser: User | null,
     history: ChatMessage[] = [],
     imageUrl?: string
-  ): Promise<AiResponse> => {
+  ) => {
     try {
-      // Use the most powerful model available
-      const model = imageUrl ? "gpt-4o" : "gpt-5.2";
-      
-      let prompt = userQuery;
-      
-      // If there's an image, include it in the request
-      if (imageUrl) {
-        // For image analysis, we pass both text and image URL
-        prompt = `${userQuery}\n\nAnalyze this image: ${imageUrl}`;
-      }
-      
-      // Add conversation history for context
-      if (history.length > 0) {
-        const historyText = history
-          .slice(-5) // Last 5 messages for context
-          .map(msg => `${msg.userId === requestingUser?.id ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n');
-        prompt = `Conversation history:\n${historyText}\n\nCurrent query: ${userQuery}`;
-      }
-      
-      // Call Puter.js API
-      const response: any = await (window as any).puter.ai.chat(prompt, {
+      // Use gpt-5.2-pro for tough math/physics logic
+      // Note: OpenRouter driver is used for high-tier Pro models in Puter.js
+      const model = imageUrl ? "gpt-5.2" : "gpt-5.2-pro";
+      const options = {
         model: model,
-        temperature: 0.1,
-        max_tokens: 2048,
-        stream: false
-      });
-      
-      let text = "";
-      if (typeof response === 'string') {
-        text = response;
-      } else if (response && response.choices && response.choices[0] && response.choices[0].message) {
-        text = response.choices[0].message.content || "";
-      } else if (response && response.text) {
-        text = response.text;
-      } else {
-        text = "Sorry, I couldn't process that request.";
-      }
-      
-      // Extract resources if they exist in the response
-      let resources: any[] = [];
-      let grounding: any[] = [];
-      const isErrorDetection = text.includes("[DIAGNOSTIC ALERT]");
-      
-      // Parse resource attachments if present
-      const tag = "[ATTACH_RESOURCES:";
-      const tagIndex = text.indexOf(tag);
-      if (tagIndex !== -1) {
-        const afterTag = text.substring(tagIndex + tag.length);
-        const closingBracketIndex = afterTag.lastIndexOf(']');
-        
-        if (closingBracketIndex !== -1) {
-          const jsonStr = afterTag.substring(0, closingBracketIndex).trim();
-          const cleanJson = jsonStr.replace(/```json|```/g, '').trim();
-          
-          try {
-            resources = JSON.parse(cleanJson);
-            text = text.substring(0, tagIndex).trim();
-          } catch (e) {
-            console.error("[Zay] Resource extraction error:", e, "Payload:", cleanJson);
-          }
-        }
-      }
-      
-      return { 
-        text, 
-        resources, 
-        grounding, 
-        type: (resources.length > 0 || isErrorDetection) ? 'file' : 'text', 
-        isErrorDetection 
+        driver: "openrouter",
+        temperature: 0.5, // Lower temperature for more accurate SM answers
+        max_tokens: 1500
       };
 
-    } catch (error: any) {
-      console.error("[Zay Puter.js Service Error]:", error);
+      // Construct a strictly academic context
+      const systemMessage = {
+        role: "system",
+        content: `You are Zay, a highly capable assistant for 1Bac Science Math (1BacSM) students. 
+        Your tone is helpful, smart, and peer-like. 
+        Focus exclusively on:
+        - Physics/Chemistry (Mechanics, Electricity, Organic Chem)
+        - Mathematics (Logic, Functions, Sequences)
+        - Providing lesson titles and helpful study tips.
+        NEVER mention being an AI or use technical jargon about processors.`
+      };
+
+      // Combine history with current query
+      const messages = [
+        systemMessage,
+        ...history.slice(-8).map(msg => ({
+          role: msg.userId === 'ZAY_ID' ? 'assistant' : 'user',
+          content: msg.content
+        })),
+        { role: 'user', content: userQuery }
+      ];
+
+      // Execute via Puter.js
+      const response: any = await (window as any).puter.ai.chat(messages, options);
+      
+      const text = typeof response === 'string' ? response : response?.message?.content || response?.text;
+
       return {
-        text: "My neural processor encountered an error. Please try your request again.",
+        text: text.trim(),
         type: 'text'
       };
-    }
-  },
-  
-  // New function for image analysis
-  analyzeImage: async (
-    imageUrl: string,
-    userQuery: string,
-    requestingUser: User | null
-  ): Promise<AiResponse> => {
-    try {
-      // Use GPT-4 Vision for image analysis
-      const response: any = await (window as any).puter.ai.chat(
-        userQuery,
-        imageUrl,
-        {
-          model: "gpt-4o",
-          temperature: 0.1,
-          max_tokens: 1024
-        }
-      );
-      
-      let text = "";
-      if (typeof response === 'string') {
-        text = response;
-      } else if (response && response.choices && response.choices[0] && response.choices[0].message) {
-        text = response.choices[0].message.content || "";
-      } else {
-        text = "I analyzed the image but couldn't generate a response.";
-      }
-      
-      return {
-        text,
-        resources: [],
-        grounding: [],
-        type: 'text',
-        isErrorDetection: text.includes("[DIAGNOSTIC ALERT]")
-      };
-      
-    } catch (error: any) {
-      console.error("[Zay Image Analysis Error]:", error);
-      return {
-        text: "I had trouble analyzing that image. Please try again.",
-        type: 'text'
-      };
+
+    } catch (error) {
+      console.error("Zay Assistant Error:", error);
+      // Fallback to GPT-5.2 Chat for speed if Pro fails
+      const fallback = await (window as any).puter.ai.chat(userQuery, { model: "gpt-5.2-chat" });
+      return { text: fallback, type: 'text' };
     }
   }
 };
