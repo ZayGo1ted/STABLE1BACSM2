@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Example NVIDIA NIM endpoint (replace with your actual one)
-  const NVIDIA_NIM_ENDPOINT = "https://integrate.api.nvidia.com/v1/granite-345b-code-instruct"; // Hypothetical endpoint
+  const NVIDIA_NIM_ENDPOINT = "https://integrate.api.nvidia.com/v1"; // Hypothetical endpoint
 
 
   // 3. Extract Data from Request Body
@@ -170,7 +170,7 @@ Name: ${requestingUser?.name || 'Student'}
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "granite-345b-code-instruct", // Specify the model if needed by endpoint
+        model: "meta/llama-3.1-405b-instruct", // Specify the model if needed by endpoint
         messages: messages,
         // Adjust parameters for reasoning and output
         temperature: 0.4, // Lower temp for more focused, factual answers
