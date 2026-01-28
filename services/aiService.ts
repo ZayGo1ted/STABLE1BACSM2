@@ -1,16 +1,14 @@
 // services/aiService.ts
 import { ChatMessage, User } from '../types';
 
-const ZAY_API_ENDPOINT = '/api/askZay'; // Assuming it's deployed on the same origin
+const ZAY_API_ENDPOINT = '/api/askZay';
 
 export const aiService = {
-  /**
-   * Sends the query and context to your custom backend API which handles interaction with the NVIDIA model.
-   */
   askZay: async (
     userQuery: string,
     requestingUser: User,
-    history: ChatMessage[] = []
+    history: ChatMessage[] = [],
+    mediaAttachments?: { url: string; type: string }[]
   ) => {
     try {
       const response = await fetch(ZAY_API_ENDPOINT, {
@@ -20,8 +18,9 @@ export const aiService = {
         },
         body: JSON.stringify({
           userQuery,
-          requestingUser, // Send user info for personalization/context
-          history,       // Send full history for memory
+          requestingUser,
+          history,
+          mediaAttachments,
         }),
       });
 
@@ -33,20 +32,18 @@ export const aiService = {
 
       const data = await response.json();
 
-      // Ensure returned data has expected structure
       return {
-        text: data.text?.trim() || "Zay is thinking...",
-        resources: data.resources || [], // Array of {name, url, type} from DB
-        grounding: data.grounding || [], // Array of grounding chunks from NVIDIA NIM
-        type: data.type || 'text', // 'text' or 'file' based on content/resources
+        text: data.text?.trim() || "Zay is processing your request...",
+        resources: data.resources || [],
+        grounding: data.grounding || [],
+        type: data.type || 'text',
         isErrorDetection: data.isErrorDetection || false,
       };
 
     } catch (error: any) {
-      console.error("Zay Service Error (Client Side):", error);
-      // Provide a user-friendly fallback message
+      console.error("Zay Service Error:", error);
       return {
-        text: "Zay encountered an issue. Could you please rephrase your question?",
+        text: "Zay encountered an issue. Please try again.",
         resources: [],
         grounding: [],
         type: 'text',
