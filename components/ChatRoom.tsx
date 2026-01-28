@@ -1,4 +1,4 @@
-// components/ChatRoom.tsx
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../AuthContext';
 import { supabaseService, getSupabase } from '../services/supabaseService';
@@ -10,7 +10,7 @@ import {
   Plus, ShieldAlert, ShieldCheck, Maximize2,
   Bot, AlertTriangle, Download, Loader2,
   ChevronRight, CornerUpLeft, Terminal, Globe, ExternalLink,
-  Zap, AlertCircle
+  Zap, AlertCircle, Wrench, Construction
 } from 'lucide-react';
 import { ZAY_USER_ID } from '../constants';
 
@@ -38,13 +38,14 @@ const formatMessageContent = (text: string) => {
     return (
       <div key={idx} className="whitespace-pre-wrap leading-relaxed">
         {part.split(complexSplitRegex).map((subPart, subIdx) => {
+          if (!subPart) return null;
           if (subPart.startsWith('**') && subPart.endsWith('**')) {
             return <strong key={subIdx} className="font-black text-slate-950 px-0.5 rounded bg-black/5">{subPart.slice(2, -2)}</strong>;
           }
           if (subPart.startsWith('`') && subPart.endsWith('`')) {
             return <code key={subIdx} className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-lg font-mono text-[11px] font-bold mx-0.5 border border-indigo-100">{subPart.slice(1, -1)}</code>;
           }
-          if (subPart.match(/^https?:\/\//)) {
+          if (subPart && typeof subPart === 'string' && subPart.match(/^https?:\/\//)) {
             return <a key={subIdx} href={subPart} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-black break-all hover:text-indigo-800">{subPart}</a>;
           }
           if (subPart.length === 1 && /[Δ∑∫√αβγθλμπφψΩωσερτξζ→←↔∀∃∈∉⊂⊃⊆⊇∩∪∞≈≠≤≥±×÷°]/.test(subPart)) {
@@ -58,7 +59,7 @@ const formatMessageContent = (text: string) => {
 };
 
 const ChatRoom: React.FC = () => {
-  const { user, t, onlineUserIds, lang, isAdmin } = useAuth();
+  const { user, t, onlineUserIds, lang, isAdmin, isDev } = useAuth();
   const [userCache, setUserCache] = useState<any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -74,6 +75,9 @@ const ChatRoom: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Only subscribe to messages if user is Dev (maintenance mode)
+    if (!isDev) return;
+
     const loadMessages = async () => {
       try {
         const msgs = await supabaseService.fetchMessages(100);
@@ -101,7 +105,7 @@ const ChatRoom: React.FC = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [isDev]);
 
   useEffect(() => {
     if (scrollContainerRef.current) {
@@ -134,7 +138,9 @@ const ChatRoom: React.FC = () => {
 
   const handleDownloadAll = (resources: any[]) => {
     resources.forEach((res, i) => {
-      setTimeout(() => forceDownload(res.url, res.name), i * 600);
+      if (res && res.url) {
+        setTimeout(() => forceDownload(res.url, res.name || 'resource'), i * 600);
+      }
     });
   };
 
@@ -147,7 +153,6 @@ const ChatRoom: React.FC = () => {
       await supabaseService.sendMessage({ userId: user.id, content });
       if (content.toLowerCase().includes('@zay')) {
         const aiRes = await aiService.askZay(content, user, messages);
-        // Persist AI response with metadata
         await supabaseService.sendMessage({ 
             userId: user.id, content: AI_PREFIX + aiRes.text,
             type: aiRes.type,
@@ -168,8 +173,49 @@ const ChatRoom: React.FC = () => {
     }
   };
 
+  // MAINTENANCE SCREEN FOR NON-DEV USERS
+  if (!isDev) {
+    return (
+      <div className="flex flex-col h-full bg-[#f2f6ff] items-center justify-center p-6 text-center animate-in fade-in duration-700">
+        <div className="max-w-md w-full glass-card p-10 rounded-[3rem] border border-indigo-100 shadow-2xl relative overflow-hidden group">
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-50 rounded-full blur-3xl group-hover:bg-indigo-100 transition-colors duration-1000"></div>
+          
+          <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white mx-auto mb-8 shadow-xl shadow-indigo-200 animate-bounce">
+            <Wrench size={40} />
+          </div>
+
+          <h2 className="text-2xl font-black text-slate-900 mb-4 tracking-tight">Chatroom Maintenance</h2>
+          
+          <div className="space-y-4">
+            <p className="text-slate-500 font-bold leading-relaxed text-sm">
+              Currently unavailable and the developer is actively fixing this and trying to find solutions.
+            </p>
+            
+            <div className="pt-6 border-t border-slate-100 flex flex-col items-center gap-2">
+                <span className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest border border-amber-100">
+                  <Construction size={14} /> Dev Mode: Enabled
+                </span>
+                <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mt-2">Expected back soon</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-8 flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-[0.3em] opacity-40">
+           <Zap size={12} className="text-indigo-400" /> Neural Core Updating
+        </div>
+      </div>
+    );
+  }
+
+  // NORMAL CHAT FOR DEV
   return (
     <div className="flex flex-col h-full bg-[#f2f6ff] relative overflow-hidden">
+      {/* Dev Header Indicator */}
+      <div className="absolute top-14 left-0 right-0 z-10 px-6 py-1 bg-amber-500/10 backdrop-blur-sm border-b border-amber-500/20 flex items-center justify-center gap-2">
+         <ShieldAlert size={10} className="text-amber-600" />
+         <span className="text-[8px] font-black uppercase tracking-[0.2em] text-amber-600">Dev Mode Active: Maintenance Preview</span>
+      </div>
+
       {/* Header */}
       <div className="px-6 py-3 bg-white border-b border-slate-100 flex justify-between items-center z-20 shadow-sm shrink-0 h-14">
         <div className="flex items-center gap-3">
@@ -192,7 +238,7 @@ const ChatRoom: React.FC = () => {
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-8 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 pt-10 space-y-8 bg-[#f2f6ff] scroll-smooth hide-scrollbar">
         {messages.map((msg, idx) => {
           const isProxyAI = msg.content.startsWith(AI_PREFIX);
           const cleanContent = isProxyAI ? msg.content.replace(AI_PREFIX, '') : msg.content;
@@ -209,7 +255,7 @@ const ChatRoom: React.FC = () => {
                 const meta = JSON.parse(msg.mediaUrl); 
                 resources = meta.res || [];
                 grounding = meta.grounding || [];
-                isDiagnosticError = meta.isError || cleanContent.includes(DIAGNOSTIC_FLAG);
+                isDiagnosticError = meta.isError || (cleanContent && cleanContent.includes(DIAGNOSTIC_FLAG));
             } catch(e) {}
           }
 
@@ -231,15 +277,15 @@ const ChatRoom: React.FC = () => {
                         </div>
                     )}
 
-                    <div className="font-sans antialiased text-[13px]">{formatMessageContent(cleanContent)}</div>
+                    <div className="font-sans antialiased text-[13px]">{formatMessageContent(cleanContent || "")}</div>
                     
-                    {grounding.length > 0 && (
+                    {grounding && grounding.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
                             <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
                                 <Globe size={12} className="text-indigo-500" /> Grounding Evidence
                             </div>
                             <div className="grid grid-cols-1 gap-1.5">
-                                {grounding.map((chunk, i) => chunk.web && (
+                                {grounding.map((chunk, i) => chunk && chunk.web && (
                                     <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-black text-indigo-700 hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm active:scale-95 group/link">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <ExternalLink size={12} className="shrink-0 text-indigo-400 group-hover/link:text-indigo-600" />
@@ -252,51 +298,39 @@ const ChatRoom: React.FC = () => {
                         </div>
                     )}
 
-                    {resources.length > 0 && (
+                    {resources && resources.length > 0 && (
                         <div className="mt-4 space-y-3 pt-2 border-t border-slate-50/50">
-                            {resources.filter(r => r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i))).length > 0 && (
-                                <div className="grid grid-cols-2 gap-2">
-                                    {resources.filter(r => r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i))).map((img, i) => (
-                                        <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name || img.title || `Image ${i+1}`})}>
-                                            <img src={img.url} className="w-full aspect-square object-cover" alt={img.name || img.title || `Image ${i+1}`} loading="lazy" />
-                                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                                                <div className="p-2 bg-white/20 backdrop-blur-md rounded-lg text-white"><Maximize2 size={20} /></div>
-                                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                {resources.filter(r => r && (r.type === 'image' || (r.url && typeof r.url === 'string' && r.url.match(/\.(jpg|jpeg|png|webp)$/i)))).map((img, i) => (
+                                    <div key={i} className="relative rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in group/img shadow-sm" onClick={() => setLightboxImage({url: img.url, name: img.name})}>
+                                        <img src={img.url} className="w-full aspect-square object-cover" alt={img.name} />
+                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                            <div className="p-2 bg-white/20 backdrop-blur-md rounded-lg text-white"><Maximize2 size={20} /></div>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
+                                    </div>
+                                ))}
+                            </div>
                             
-                            {resources.filter(r => !(r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i)))).length > 0 && (
-                                <div className="space-y-2">
-                                    {resources.filter(r => !(r.type === 'image' || (r.url && r.url.match(/\.(jpg|jpeg|png|webp)$/i)))).map((file, i) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group/file w-full">
-                                            <div className="w-10 h-10 shrink-0 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm">
-                                                <FileIcon size={18} />
-                                            </div>
-                                            <div className="flex-1 min-w-0 flex flex-col items-start overflow-hidden">
-                                                <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || file.title || "Hub Resource"}</span>
-                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Download</span>
-                                            </div>
-                                            <button 
-                                                onClick={() => forceDownload(file.url, file.name || file.title || `resource-${i}`)} 
-                                                className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0"
-                                                disabled={!file.url}
-                                            >
-                                                <Download size={16} />
-                                            </button>
+                            <div className="space-y-2">
+                                {resources.filter(r => r && r.url && typeof r.url === 'string' && !r.url.match(/\.(jpg|jpeg|png|webp)$/i)).map((file, i) => (
+                                    <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group/file w-full">
+                                        <div className="w-10 h-10 shrink-0 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm">
+                                            <FileIcon size={18} />
                                         </div>
-                                    ))}
-                                </div>
-                            )}
+                                        <div className="flex-1 min-w-0 flex flex-col items-start overflow-hidden">
+                                            <span className="text-xs font-black text-slate-800 truncate w-full block text-left">{file.name || "Hub Resource"}</span>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Download</span>
+                                        </div>
+                                        <button onClick={() => forceDownload(file.url, file.name || 'resource')} className="p-2 bg-white hover:bg-indigo-600 hover:text-white border border-slate-100 rounded-xl transition-all shadow-sm shrink-0">
+                                            <Download size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                             
-                            {resources.filter(r => r.url).length > 1 && (
-                                <button 
-                                    onClick={() => handleDownloadAll(resources.filter(r => r.url))} 
-                                    className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95"
-                                    disabled={resources.filter(r => r.url).length === 0}
-                                >
-                                    <Download size={14} /> Download All ({resources.filter(r => r.url).length})
+                            {resources.length > 1 && (
+                                <button onClick={() => handleDownloadAll(resources)} className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 mt-2 border border-indigo-100 shadow-sm active:scale-95">
+                                    <Download size={14} /> Download All ({resources.length})
                                 </button>
                             )}
                         </div>
